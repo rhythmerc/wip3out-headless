@@ -5,6 +5,7 @@
 //! - [`native`]: the game library, loaded.
 //! - [`stage`]: the runtime's world in the game's units and axes, and the ship's place in it.
 //! - [`model`]: the local ship's own model and textures, read from the game as it races.
+//! - [`sound`]: the game's own sound, as the runtime's stream.
 //! - [`engine`]: the game as the runtime drives it ([`engine_core::EngineCore`]): free flight over the stage.
 //!
 //! The ship flies over the room, not a circuit: the game keeps a ship on its track through track sections (a centre
@@ -14,6 +15,7 @@
 pub mod engine;
 pub mod model;
 pub mod native;
+pub mod sound;
 pub mod stage;
 
 /// What the runtime knows of this engine before one is made: x1.0 is a ship toy-sized, about 46 cm long over the

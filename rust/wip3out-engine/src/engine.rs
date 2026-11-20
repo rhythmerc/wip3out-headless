@@ -4,8 +4,8 @@
 //! (the library rebuilds the track section under the ship from them every frame); putting the player down puts the
 //! ship there.
 //!
-//! The game's sound, HUD and laps are not taken yet; weapons are out of scope. The race is a solo race and its
-//! checkpoint clock is held full by the library, so free play runs on.
+//! Its sound is the game's own ([`crate::sound`]). Its HUD and laps are not taken yet; weapons are out of scope. The
+//! race is a solo race and its checkpoint clock is held full by the library, so free play runs on.
 use crate::native::{Game, Pad, Ship, button};
 use crate::stage::{self, HOVER, UNITS};
 use engine_core::glam::Vec3;
@@ -332,6 +332,12 @@ impl EngineCore for Wip3out {
             forward: frame.z_axis.truncate().normalize_or(Vec3::NEG_Z),
             height: SHIP_DRAWN_HEIGHT / units,
         })
+    }
+
+    /// The game's own sound ([`crate::sound`]), kept for the stream from here on.
+    fn stream(&mut self) -> Option<engine_core::audio::StreamFactory> {
+        let tap = self.game.sound(true)?;
+        Some(Box::new(move || Ok(Box::new(crate::sound::Mix::new(tap)) as Box<dyn engine_core::audio::Stream>)))
     }
 
     fn models(&mut self) -> Vec<Model> {
