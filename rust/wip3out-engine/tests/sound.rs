@@ -1,6 +1,7 @@
 //! The game's own sound: the player's game library (`WO3_ENGINE_LIB`) and their disc's cue sheet (`WO3_DISC`; skipped
 //! without them). The ship idles, then thrusts across an 8 m room into its wall, turns and goes again, its sound taken
-//! through the engine's stream as the runtime takes it (four blocks a frame): it is heard, and not clipped.
+//! through the engine's stream as the runtime takes it (four blocks a frame): it is heard, without a gap, after its
+//! wall hits too, and not clipped.
 //! `WO3_SOUND_WAV=path` writes it (mono, 44.1 kHz) with the ship's speed each frame beside it (`path.csv`: frame,
 //! speed in real m/s, thrust held) - a recording of the player's game: never kept in a repo.
 use engine_core::glam::Vec3;
@@ -86,11 +87,16 @@ fn the_ship_is_heard() {
     let rms = |s: &[f32]| (s.iter().map(|x| x * x).sum::<f32>() / s.len().max(1) as f32).sqrt();
     let at = |frame: usize| frame * pcm.len() / rows.len();
     let (idling, flying) = (rms(&pcm[at(25)..at(75)]), rms(&pcm[at(100)..at(250)]));
+    // (the second run, after the wall hits: the engine still heard)
+    let again = rms(&pcm[at(310)..at(370)]);
+    // (no gap: the longest silence after the first second)
+    let gap = pcm[at(25)..].split(|s| *s != 0.0).map(<[f32]>::len).max().unwrap_or(0);
     let peak = pcm.iter().fold(0f32, |m, s| m.max(s.abs()));
     let clipped = pcm.iter().filter(|s| s.abs() > 0.999).count();
     let top = rows.iter().map(|r| r.1).fold(0f32, f32::max);
     eprintln!(
-        "sound: {:.1} s at {rate} Hz, rms idling {idling:.4}, flying {flying:.4}, peak {peak:.3}, {clipped} clipped; top speed {top:.2} m/s",
+        "sound: {:.1} s at {rate} Hz, rms idling {idling:.4}, flying {flying:.4}, again {again:.4}, peak {peak:.3}, \
+         {clipped} clipped, longest silence {gap} samples; top speed {top:.2} m/s",
         pcm.len() as f64 / f64::from(rate)
     );
     if let Some(path) = std::env::var_os("WO3_SOUND_WAV") {
@@ -103,6 +109,8 @@ fn the_ship_is_heard() {
         std::fs::write(path.with_extension("csv"), csv).expect("the csv");
     }
     assert!(flying > 0.005, "the ship heard flying: rms {flying}");
+    assert!(again > 0.02, "the ship heard flying after its wall hits: rms {again}");
+    assert!(gap < 441, "no gap in its sound: {gap} samples silent");
     assert!(clipped < pcm.len() / 1000, "not clipped: {clipped} samples");
     let _ = std::fs::remove_dir_all(data);
 }

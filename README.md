@@ -160,7 +160,8 @@ own camera, not the player), played from the ship. Heard:
 
 - the ship's engine, its pitch rising with its speed (some an octave from idle to top speed), and the wind over it;
 - wall hits, as the game plays them (a hit at speed, and the knocks of a ship held against a wall);
-- the race's start (its countdown), once, as the stream starts.
+- the race's own start sounds, once, as the stream starts (the loudest of it, near full scale; the runtime may not
+  play it, holding the engine until the ship is put down).
 
 How:
 
@@ -170,8 +171,8 @@ How:
 - **At PAL's pace.** The runtime's vblank is NTSC's (60 Hz) for every disc; the game is PAL and is stepped at PAL's
   25 frames a second, two vblanks each. The SPU makes 882 frames a vblank, as on PAL hardware (640 guest cycles a
   sample, not 768), so a frame is 1/25 s of sound, not 1/30.
-- **No music.** The music is CD audio off the disc, kept off the SPU's CD input (`WO3_MUSIC=1`: on; at PAL's pace the
-  drive delivers it slower than the SPU takes it, so it would break up).
+- **No music.** The music is CD audio off the disc, kept off the SPU's CD input (`WO3_MUSIC=1`: on; untested at PAL's
+  pace, where the drive delivers it slower than the SPU takes it, so it may break up).
 - **Handed over:** the library keeps what was rendered (a fifth of a second at most) once the engine's stream asks
   (`wo3_set_sound`); the stream takes it each hundredth of a second, keeping a frame and a half in hand, since the
   game makes it a frame at a time as it steps.
@@ -184,8 +185,8 @@ headless savings:
 
 | | before | after |
 |---|---|---|
-| factory to racing | 5.37 s | 2.61 s |
-| a game frame (of 40 ms) | 6.66 ms | 2.65 ms |
+| factory to racing | 5.37 s | 2.61 s (2.76 s with its sound) |
+| a game frame (of 40 ms) | 6.66 ms | 2.65 ms (2.89 ms with its sound) |
 
 psxrecomp is cycle-exact: every guest instruction pays its cycle accounting, so a frame costs what the guest's cycles
 do. The library (`buildar/wo3_speed.cpp`, `engine_api.cpp`) cuts those cycles:
@@ -195,9 +196,9 @@ do. The library (`buildar/wo3_speed.cpp`, `engine_api.cpp`) cuts those cycles:
 - **The race's scene isn't drawn.** About half the frame was the game transforming the track, sky and ships on the
   guest's GTE for a picture nobody sees; the ships' flight doesn't read it (`WO3_DRAW=1` draws it).
 - **The sound costs 0.3 ms a frame** (2.59 ms a frame with `WO3_SOUND=0`, 2.89 with it, desktop): the SPU at its
-  own rate, walking only the voices sounding, the unheard ones (at volume 0) stepped
-  without making their samples. The runtime's own host audio path (its SDL device and resampler) cost 3.4 ms more, and
-  is off.
+  own rate, walking only the voices sounding, the unheard ones (at volume 0) stepped without making their samples
+  (0.41 ms of SPU a frame before, 0.33 after). Rendered as the stock runtime does, with its host audio path (an SDL
+  device and its resampler), a frame cost 3.4 ms more; with a host taking the mix, no device opens.
 - **The runtime's text capture is off**, and **the BIOS boot reads the disc at 32x** (the game itself at its own
   speed).
 
@@ -213,6 +214,11 @@ desktop). The poses are a frame (40 ms) behind the controllers. `WO3_STEP_WHOLE=
 
 - **Corners:** the corridor takes one wall and the one facing it.
 - **Missing features:** no HUD or laps, no music (above); weapons are out of scope.
+- **The engine's sound thins at the first wall hits.** The game plays the engine on two voices with the wind over it
+  on a third, but marks only the first as in use (it re-keys them as the race starts, after its intro), so its next
+  effects - the hits - take the other two: the engine goes on, about half as loud. The game's voice table is at
+  `0x801D63EC` (36 bytes a voice, in use at +8), its round-robin allocator at `0x80121F3C`. Whether the game does
+  this on a PlayStation too isn't known.
 - **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
   already rewritten.
 - **Controls:** input is digital (the game also takes a DualShock's sticks). The air brakes on L1/R1 are untested.
