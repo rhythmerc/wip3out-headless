@@ -13,6 +13,7 @@ disc.
 - `rust/wip3out-engine`: the engine contract (`engine_core::EngineCore`) over the game library:
   - `native.rs` loads the library and calls its C API (`wo3_engine.h`);
   - `stage.rs` maps the runtime's world into the game's units and axes;
+  - `model.rs` reads the local ship's own model and textures from the game as it races;
   - `engine.rs` is the engine.
 - Shared host pieces (loading a game library, input, space, stand-in model) come from
   [`buildar-headless-core`](../buildar-headless-core), a sibling repo. Mario Kart Wii's engine uses the same crate.
@@ -23,13 +24,20 @@ It is built from a local clone of the recomp project, on its `buildar` branch (a
 it). The branch adds:
 
 - `buildar/` in the game repo:
-  - the C API (`wo3_engine.h`, `engine_api.cpp`): boot headless on a thread, drive the menus to a single race, then
-    step in lockstep a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's
-    pad, and read the local ship;
-  - the room collision (`wo3_room.cpp`, below).
+  - the C API (`wo3_engine.h`, `engine_api.cpp`): boot headless on a thread, into a solo race, then step in lockstep
+    a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's pad; read the
+    local ship, its models and the video memory;
+  - into a race quickly (`wo3_race.cpp`): the boot screens skipped (the logos, the title and its attract movie), the
+    menus passed with the pad as each screen takes it, the race's ship count made one, its checkpoint clock held full.
+    The race starts some 8 s after boot, against 23 s with the menus driven by frame counts;
+  - the room collision (`wo3_room.cpp`, below);
+  - no picture: the game's drawing is off (the host draws the ship from its model), textures still loaded.
 - psxrecomp:
-  - `PSX_BUILDAR_SHARED`: the runtime as a shared library, its `main` renamed;
+  - `PSX_BUILDAR_SHARED`: the runtime as a shared library, its `main` renamed (on Android always so);
   - two weak hooks, `psx_buildar_vblank` (lockstep) and `psx_buildar_pad`;
+  - mod hooks that can take a function's place (`psx_mod_register_function_replace_plugin`);
+  - `gpu_set_skip_draw`;
+  - Android arm64: an AArch64 fiber switch (Bionic has no `ucontext`), GLES linked, `-fsigned-char`;
   - fixes for a launcher-less library.
 
 Build it (Linux, in a toolbox with cmake, ninja and gcc):
@@ -46,7 +54,16 @@ cmake --build build-lib --target psx-runtime      # build-lib/libwip3out_engine.
 
 `disc/` holds the Redump-style multi-track dump: the cue sheet and one bin per track. Track 01's MD5 must be
 `b9d48f139544051893f45eed62780e42`. A CHD converts with `chdman extractcd`, then split the bin per track at the
-cue's `INDEX 00` points. The library finds `game.toml` and `bios/openbios.bin` beside itself.
+cue's `INDEX 00` points. The engine copies `game.toml` and `bios/` from beside the library into its data folder the
+first time, and the library takes them, and keeps its writable state, there.
+
+For Android arm64 (builds and links, not yet run on a device):
+
+```sh
+cmake -S . -B build-android -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF \
+    -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29
+cmake --build build-android --target psx-runtime  # build-android/libwip3out_engine.so
+```
 
 ## Tests
 
@@ -56,8 +73,14 @@ WO3_DISC="/path/to/WipEout 3 - Special Edition (Europe) (En,Fr,De,Es,It).cue" \
 cargo test --release
 ```
 
-Without the two variables, `tests/free_flight.rs` skips itself. With them, it boots the game, flies the ship over a
-6 m walled floor, and checks the hover and the walls.
+Without the two variables the game's tests skip themselves. With them:
+
+- `free_flight`: a 6 m walled floor in both windings; the ship hovers within 3 cm and stays inside the walls, and
+  steps go on past where the race would end;
+- `long_flight`: ten minutes of the game's time round an 8 m room - no game over, one ship, the other slots still;
+- `ship_tuning`: speed and acceleration;
+- `ship_model`: the game's own model, textured; `WO3_MODEL_PNG=path` draws it in four views (a picture of the
+  player's game: never kept in a repo).
 
 ## Settings and scale
 
@@ -70,7 +93,7 @@ As Mario Kart Wii's engine has them (`engine::settings`):
 Its size in the room is the runtime's world scale, as for every engine. The engine works in game metres, 160 game
 units each: the ship is about 6.5 m long, an anti-gravity racer's size. `stage::DEFAULT_SCALE` (26 game metres to a
 real one) makes it a toy about a quarter of a metre long. The app's `Engine::default_scale` would take that value for
-this engine, as it takes 8 for Mario Kart Wii.
+this engine, as it takes 8 for Mario Kart Wii; `INFO` declares it (`EngineInfo::natural_scale`).
 
 ## How the ship flies over a room
 
@@ -104,15 +127,13 @@ The game's own hover, gravity and wall response then run on the room.
 
 ## Not yet
 
-- **Model:** the ship is drawn as a box. The game's model and textures sit in the disc's `.PBP` archives, not read
-  yet.
-- **Missing features:** no sound, HUD, weapons or laps.
-- **Checkpoint clock:** the race's clock still runs. After about 50 seconds without checkpoints its game over takes
-  the ship away. Steps go on (the tests fly past it), but the ship no longer moves.
-- **AI ships:** they still race the circuit, and are routed through the sections rewritten under the player.
+- **Corners:** the corridor takes one wall and the one facing it; in a corner, thrust held, the ship is pinned
+  against two walls at once (pushed out each frame, not trapped through them).
+- **Missing features:** no sound, HUD or laps; weapons are out of scope.
+- **The menus are passed, not skipped:** the menus load what the race uses (`wo3_race.cpp` says what was found), so
+  their code still runs, with the pad.
 - **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
   already rewritten.
 - **Controls:** input is digital (the game also takes a DualShock's sticks). The air brakes on L1/R1 are untested.
-- **Android:** the engine library itself (with `wo3_*` and `psx_runtime_main`) compiles and links for arm64, with a
-  fiber shim for Bionic's missing `ucontext`. It hasn't run on a device: its renderer is desktop GL and its paths are
-  desktop paths.
+- **Android:** the engine library builds and links for arm64; it hasn't run on a device. With drawing off and
+  headless, it makes no GL calls; its files are in the data folder the host gives.
