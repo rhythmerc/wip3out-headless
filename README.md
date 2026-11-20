@@ -31,9 +31,10 @@ it). The branch adds:
     a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's pad; read the
     local ship, its models and the video memory;
   - into a race quickly (`wo3_race.cpp`): the boot screens skipped (the logos, the title and its attract movie), the
-    menus passed with the pad as each screen takes it, the race's ship count made one, its checkpoint clock and the
+    menus skipped (their code made to return; what they leave set written at the race, `WO3_PAD_MENUS` to pass them
+    with the pad instead), the race's ship count made one, its checkpoint clock and the
     local ship's energy (which wall hits wear down, to its destruction) held full.
-    The race starts some 8 s after boot, against 23 s with the menus driven by frame counts;
+    The race starts some 6 s after boot, against 23 s with the menus driven by frame counts;
   - the room collision (`wo3_room.cpp`, below);
   - no picture: the game's drawing is off (the host draws the ship from its model), textures still loaded.
 - psxrecomp:
@@ -133,10 +134,6 @@ The game's own hover, gravity and wall response then run on the room.
 ## Not yet
 
 - **Corners:** the corridor takes one wall and the one facing it.
-- **The menus are passed, not skipped:** skipping them was tried as far as this: with the front end's own setup kept,
-  the menus' code made to return and what they leave set written, the race is entered at vblank 767 but fails setting
-  up its ships - it reads ship and pilot records the menus build (`wo3_race.cpp`). Going in directly needs those
-  built as the menus build them.
 - **Missing features:** no sound, HUD or laps; weapons are out of scope.
 - **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
   already rewritten.
