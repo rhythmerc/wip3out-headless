@@ -144,13 +144,35 @@ The game's own hover, gravity and wall response then run on the room.
   under it. Left on, the section stays behind, the game takes the far-off ship for lost, and its rescue drags it
   across the room. Over the floor a rescue, if one starts, is ended as the game ends it.
 
+## What it costs
+
+`examples/bench.rs` (`bench <library> <cue> [frames]`, desktop or an Android shell) times the factory to the race,
+then a frame stepped whole, back to back, flown round a walled room. A desktop, before and after the library's
+headless savings:
+
+| | before | after |
+|---|---|---|
+| factory to racing | 5.37 s | 2.61 s |
+| a game frame (of 40 ms) | 6.66 ms | 2.65 ms |
+
+psxrecomp is cycle-exact: every guest instruction pays its cycle accounting, so a frame costs what the guest's cycles
+do. The library (`buildar/wo3_speed.cpp`, `engine_api.cpp`) cuts those cycles:
+
+- **The vsync wait is done natively.** The game spins in the PsyQ VSync loop for the next vertical blank. The library
+  advances the guest onto each next deliverable event instead, delivering its interrupt there.
+- **The race's scene isn't drawn.** About half the frame was the game transforming the track, sky and ships on the
+  guest's GTE for a picture nobody sees; the ships' flight doesn't read it (`WO3_DRAW=1` draws it).
+- **No sound is rendered.** No host takes it yet (`WO3_SOUND=1` renders it).
+- **The runtime's text capture is off**, and **the BIOS boot reads the disc at 32x** (the game itself at its own
+  speed).
+
+The race's loading (some 360 vertical blanks of the game's own decompression) and its intro (330) remain.
+
 ## Steps off the runtime's thread
 
-The game's frame costs some 8 ms on a desktop and 20-40 ms on a Quest - the emulated game itself; the room's rebuild
-is 0.13 ms of it (4500 triangles). A step waits for the frame started at the step before (on the game's own thread,
-run while the runtime drew its frames), reads it and starts the next: between the runtime's own frames a step holds
-it up 0.01 ms against 9.7 stepped whole (`room_dump`, desktop). The poses are a frame (40 ms) behind the controllers.
-`WO3_STEP_WHOLE=1` steps whole.
+A step waits for the frame started at the step before (on the game's own thread, run while the runtime drew its
+frames), reads it and starts the next: between the runtime's own frames a step holds it up 0.01 ms (`room_dump`,
+desktop). The poses are a frame (40 ms) behind the controllers. `WO3_STEP_WHOLE=1` steps whole.
 
 ## Not yet
 
