@@ -62,6 +62,7 @@ pub const FLYING: u32 = 0x10;
 type Boot = unsafe extern "C" fn(*const c_char, *const c_char) -> c_int;
 type Racing = unsafe extern "C" fn() -> c_int;
 type Step = unsafe extern "C" fn(*const Pad) -> c_int;
+type StepWait = unsafe extern "C" fn() -> c_int;
 type GetShip = unsafe extern "C" fn(*mut Ship) -> c_int;
 type Read = unsafe extern "C" fn(u32, *mut u8, u32) -> c_int;
 type SetStage = unsafe extern "C" fn(*const f32, u32);
@@ -76,6 +77,9 @@ pub struct Game {
     boot: Boot,
     racing: Racing,
     step: Step,
+    /// (the frame in two halves; a library built before them: none - stepped whole)
+    step_begin: Option<Step>,
+    step_wait: Option<StepWait>,
     ship: GetShip,
     read: Read,
     set_stage: SetStage,
@@ -99,6 +103,8 @@ impl Game {
                 boot: library.function("wo3_boot")?,
                 racing: library.function("wo3_racing")?,
                 step: library.function("wo3_step")?,
+                step_begin: library.optional("wo3_step_begin"),
+                step_wait: library.optional("wo3_step_wait"),
                 ship: library.function("wo3_ship")?,
                 read: library.function("wo3_read")?,
                 set_stage: library.function("wo3_set_stage")?,
@@ -135,6 +141,33 @@ impl Game {
         match unsafe { (self.step)(pad) } {
             0 => Ok(()),
             e => Err(format!("wo3_step: {e}")),
+        }
+    }
+
+    /// Whether the library can start a frame and wait for it apart ([`Game::step_begin`], [`Game::step_wait`]).
+    pub fn steps_apart(&self) -> bool {
+        self.step_begin.is_some() && self.step_wait.is_some()
+    }
+
+    /// A frame started with `pad`, run on the game's thread while the caller goes on: false when one was still running
+    /// (it runs on; wait for it first). Without [`Game::steps_apart`], the whole frame.
+    pub fn step_begin(&self, pad: &Pad) -> Result<bool, String> {
+        let Some(begin) = self.step_begin else { return self.step(pad).map(|()| true) };
+        // SAFETY: the pad is read during the call.
+        match unsafe { begin(pad) } {
+            0 => Ok(true),
+            1 => Ok(false),
+            e => Err(format!("wo3_step_begin: {e}")),
+        }
+    }
+
+    /// The frame started last done: the game is still until the next starts (read it then).
+    pub fn step_wait(&self) -> Result<(), String> {
+        let Some(wait) = self.step_wait else { return Ok(()) };
+        // SAFETY: no arguments.
+        match unsafe { wait() } {
+            0 => Ok(()),
+            e => Err(format!("wo3_step_wait: {e}")),
         }
     }
 

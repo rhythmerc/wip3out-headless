@@ -28,8 +28,9 @@ it). The branch adds:
 
 - `buildar/` in the game repo:
   - the C API (`wo3_engine.h`, `engine_api.cpp`): boot headless on a thread, into a solo race, then step in lockstep
-    a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's pad; read the
-    local ship, its models and the video memory;
+    a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's pad - whole, or
+    started and waited for apart (`wo3_step_begin`, `wo3_step_wait`); read the local ship, its models and the video
+    memory; put the ship down at rest, level, as the game sets a ship on the grid;
   - into a race quickly (`wo3_race.cpp`): the boot screens skipped (the logos, the title and its attract movie), the
     menus skipped (their code made to return; what they leave set written at the race, `WO3_PAD_MENUS` to pass them
     with the pad instead), the race's ship count made one, its checkpoint clock and the
@@ -86,7 +87,13 @@ Without the two variables the game's tests skip themselves. With them:
   flying on every minute (never destroyed by the walls: the library holds its energy), on the floor inside the walls;
 - `ship_tuning`: speed and acceleration;
 - `ship_model`: the game's own model, textured; `WO3_MODEL_PNG=path` draws it in four views (a picture of the
-  player's game: never kept in a repo).
+  player's game: never kept in a repo);
+- `corner`: flown into a corner of a walled room and out again;
+- `room_dump` (also `WO3_STAGE_DUMP`: a room as the app dumped it, its `dump_stage` dev flag - the player's scan,
+  never kept in a repo): the ship put down where the player put it on the headset (the floor, the bed, a pillow on
+  it) at the dump's scale and at 26; left alone it stays put and upright (off the pillow it may slide, onto the
+  bed), flown it stays in the room, the stage given again as a new revision as it flies. It prints what a step costs,
+  back to back and between the caller's own frames.
 
 ## Settings and scale
 
@@ -130,6 +137,20 @@ The game's own hover, gravity and wall response then run on the room.
 - **Walls are one-sided.** A stage triangle's front (counter-clockwise) faces the room. A scanned mesh's walls come in
   both windings, and the copy whose back faces the ship is passed through. A ship that went through a wall's front in
   the last frame is put back in front of it, its velocity into the wall reversed.
+- **A wall is one the ship meets.** Its nearest point is more than 120 units over the floor (lower - a scan's floor
+  noise, cables - the ship hovers over it) and at most 600 over the ship (higher - a shelf's underside, a ceiling's
+  light - it passes under). The facing wall is one straight across, by its horizontal distance.
+- **The floor's edge is a wall.** Past it (the scan's end, an open door) the ship is put back where it last had floor
+  under it. Left on, the section stays behind, the game takes the far-off ship for lost, and its rescue drags it
+  across the room. Over the floor a rescue, if one starts, is ended as the game ends it.
+
+## Steps off the runtime's thread
+
+The game's frame costs some 8 ms on a desktop and 20-40 ms on a Quest - the emulated game itself; the room's rebuild
+is 0.13 ms of it (4500 triangles). A step waits for the frame started at the step before (on the game's own thread,
+run while the runtime drew its frames), reads it and starts the next: between the runtime's own frames a step holds
+it up 0.01 ms against 9.7 stepped whole (`room_dump`, desktop). The poses are a frame (40 ms) behind the controllers.
+`WO3_STEP_WHOLE=1` steps whole.
 
 ## Not yet
 

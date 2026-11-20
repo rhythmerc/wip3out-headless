@@ -42,7 +42,10 @@ pub fn factory(library: PathBuf, cue: PathBuf, data: PathBuf) -> EngineFactory {
     Box::new(move || {
         let game = Game::load(&library)?;
         std::fs::create_dir_all(&data).map_err(|e| format!("{}: {e}", data.display()))?;
-        stage_runtime_files(&library, &data)?;
+        // (beside the library, or beside the disc: a host may load a copy of the library from elsewhere, as Android
+        // must from the app's own storage)
+        let beside = |p: &std::path::Path| p.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+        stage_runtime_files(&[beside(&library), beside(&cue)], &data)?;
         game.boot(&cue, &data)?;
         // (the ship's own model is the race's: read once the race is loaded, some 8 seconds on - this is the worker)
         let start = std::time::Instant::now();
@@ -54,16 +57,16 @@ pub fn factory(library: PathBuf, cue: PathBuf, data: PathBuf) -> EngineFactory {
     })
 }
 
-/// The runtime's own files beside the game library (its configuration and BIOS), copied into the data folder the first
+/// The runtime's own files beside the game library or the disc (its configuration and BIOS), copied into the data folder the first
 /// time: the library takes them from there, and keeps its writable state with them - on Android the library's folder
 /// may not be writable, the data folder is the app's.
 const RUNTIME_FILES: &[&str] = &["game.toml", "game_options.toml", "bios/openbios.bin", "bios/OpenBIOS.LICENSE"];
 
-fn stage_runtime_files(library: &std::path::Path, data: &std::path::Path) -> Result<(), String> {
-    let from = library.parent().unwrap_or(std::path::Path::new("."));
+fn stage_runtime_files(folders: &[std::path::PathBuf], data: &std::path::Path) -> Result<(), String> {
     for file in RUNTIME_FILES {
-        let (src, dst) = (from.join(file), data.join(file));
-        if dst.exists() || !src.exists() {
+        let dst = data.join(file);
+        let Some(src) = folders.iter().map(|f| f.join(file)).find(|p| p.exists()) else { continue };
+        if dst.exists() {
             continue;
         }
         if let Some(dir) = dst.parent() {
@@ -90,6 +93,8 @@ pub struct Wip3out {
     joints: Vec<engine_core::glam::Mat4>,
     posed: bool,
     cut: bool,
+    /// A frame running on the game's thread, started at the last step (its results read at the next).
+    running: bool,
 }
 
 impl Wip3out {
@@ -110,12 +115,24 @@ impl Wip3out {
             joints: Vec::new(),
             posed: false,
             cut: true,
+            running: false,
         }
     }
 
     /// Game units a world metre.
     fn units(&self) -> f32 {
         UNITS
+    }
+
+    /// The ship after the frame just done (the game still).
+    fn read_frame(&mut self) {
+        if let Some(ship) = self.game.ship() {
+            self.ship = Some(ship);
+            self.posed = true;
+            if let Some(joints) = self.parts.and_then(|p| p.pose(&self.game)) {
+                self.joints = joints;
+            }
+        }
     }
 }
 
@@ -207,6 +224,10 @@ impl EngineCore for Wip3out {
     /// The ship put there, hovering, at rest (before the race: once it runs).
     fn place_player(&mut self, place: PlacePlayer) {
         if self.game.racing() {
+            // (a frame running ends first, as it was, unseen: the ship is put down at the next, which is drawn cut)
+            if std::mem::take(&mut self.running) {
+                let _ = self.game.step_wait();
+            }
             let (position, yaw) = stage::placement(place.point, place.forward, self.units());
             self.game.place_ship(position, yaw);
             self.cut = true;
@@ -224,17 +245,22 @@ impl EngineCore for Wip3out {
         self.game.racing()
     }
 
+    /// A frame, its game's part run on the game's thread while the runtime goes on: the frame started at the last
+    /// step finished (some 8 ms of the 40 a frame on a desktop, 20-40 on a Quest, mostly done by now) and read, and the
+    /// next started with the controllers as they are. The poses are a frame (1/25 s) behind the controllers. The first
+    /// step (or one after a placement) runs a frame whole first.
     fn step(&mut self) -> Result<(), String> {
         if let Some(place) = self.place.take() {
             self.place_player(place);
         }
-        self.game.step(&self.pad)?;
-        if let Some(ship) = self.game.ship() {
-            self.ship = Some(ship);
-            self.posed = true;
-            if let Some(joints) = self.parts.and_then(|p| p.pose(&self.game)) {
-                self.joints = joints;
-            }
+        if std::mem::take(&mut self.running) {
+            self.game.step_wait()?;
+        } else {
+            self.game.step(&self.pad)?;
+        }
+        self.read_frame();
+        if self.game.steps_apart() && std::env::var_os("WO3_STEP_WHOLE").is_none() {
+            self.running = self.game.step_begin(&self.pad)?;
         }
         Ok(())
     }
