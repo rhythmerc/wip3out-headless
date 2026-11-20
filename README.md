@@ -20,7 +20,7 @@ disc.
   - `sound.rs` hands the game's own sound to the runtime as a stream (below);
   - `engine.rs` is the engine.
 - Shared host pieces (loading a game library, input, space, stand-in model) come from
-  [`buildar-headless-core`](../buildar-headless-core), a sibling repo. Mario Kart Wii's engine uses the same crate.
+  [`buildar-headless-core`](https://github.com/rhythmerc/buildar-headless-core), shared with the other headless engines.
 
 ## The game library
 

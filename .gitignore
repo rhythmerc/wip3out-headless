@@ -1,3 +1,4 @@
 target/
 # the game runtime's report of its last run (holds game memory): never committed
 psx_last_run_report.json
+psx_last_run_report.json

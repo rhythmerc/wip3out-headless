@@ -12,10 +12,10 @@ path = "src/lib.rs"
 
 [dependencies]
 # The engine contract (a host pins the same revision).
-engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "1d66ba37ca305a637ba547fb77aa389539bee9c8" }
+engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "53880bada814385d0c3c96fcd4db808f02de737d" }
 # What every headless engine hosts the same way: the game's library loaded and called, the controllers as a pad, the
-# world in the game's units and axes, a stand-in model (a sibling repo of this one).
-buildar-headless-core = { path = "../../../buildar-headless-core" }
+# world in the game's units and axes, a stand-in model.
+buildar-headless-core = { git = "https://github.com/rhythmerc/buildar-headless-core", rev = "74154eec3abebb3359e179d227b97bc0264e0c18" }
 
 [dev-dependencies]
 png = "0.18"
