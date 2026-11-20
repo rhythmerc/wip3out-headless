@@ -12,7 +12,7 @@ use headless_core::space::{GameSpace, Y_DOWN};
 pub const UNITS: f32 = 160.0;
 
 /// The world scale (game metres a real one) that makes the ship a toy about a quarter of a metre long over the room's
-/// floor: the runtime's default for this engine, as Mario Kart Wii's is 8.
+/// floor: the runtime's default for this engine ([`crate::INFO`]), as Mario Kart Wii's is 8.
 pub const DEFAULT_SCALE: f32 = 26.0;
 
 /// How high the ship hovers over the ground, game units (as the game holds it over its own track).
