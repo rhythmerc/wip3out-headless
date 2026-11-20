@@ -42,6 +42,7 @@ pub fn factory(library: PathBuf, cue: PathBuf, data: PathBuf) -> EngineFactory {
     Box::new(move || {
         let game = Game::load(&library)?;
         std::fs::create_dir_all(&data).map_err(|e| format!("{}: {e}", data.display()))?;
+        stage_runtime_files(&library, &data)?;
         game.boot(&cue, &data)?;
         // (the ship's own model is the race's: read once the race is loaded, some 8 seconds on - this is the worker)
         let start = std::time::Instant::now();
@@ -51,6 +52,26 @@ pub fn factory(library: PathBuf, cue: PathBuf, data: PathBuf) -> EngineFactory {
         let model = crate::model::ship(&game).map_err(|e| eprintln!("Wip3out: the ship's model: {e}; a box stands in")).ok();
         Ok(Box::new(Wip3out::new(game, model)) as Box<dyn EngineCore>)
     })
+}
+
+/// The runtime's own files beside the game library (its configuration and BIOS), copied into the data folder the first
+/// time: the library takes them from there, and keeps its writable state with them - on Android the library's folder
+/// may not be writable, the data folder is the app's.
+const RUNTIME_FILES: &[&str] = &["game.toml", "game_options.toml", "bios/openbios.bin", "bios/OpenBIOS.LICENSE"];
+
+fn stage_runtime_files(library: &std::path::Path, data: &std::path::Path) -> Result<(), String> {
+    let from = library.parent().unwrap_or(std::path::Path::new("."));
+    for file in RUNTIME_FILES {
+        let (src, dst) = (from.join(file), data.join(file));
+        if dst.exists() || !src.exists() {
+            continue;
+        }
+        if let Some(dir) = dst.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+    }
+    Ok(())
 }
 
 /// The running game.
