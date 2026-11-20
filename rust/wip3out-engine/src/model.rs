@@ -11,7 +11,7 @@
 use crate::native::Game;
 use engine_core::glam::{Mat3, Mat4, Vec3};
 use engine_core::hud::Rgba8;
-use engine_core::model::{AlphaMode, Lighting, MaterialDesc, MeshData};
+use engine_core::model::{AlphaMode, BodyGroup, Cast, Ellipse, GroupId, Lighting, MaterialDesc, MeshData, Point};
 use engine_core::{Model, ModelSource};
 use std::collections::BTreeMap;
 
@@ -230,12 +230,39 @@ pub fn ship(game: &Game) -> Result<(Model, ShipParts), String> {
     if meshes.is_empty() {
         return Err("the ship's model has no faces".into());
     }
+    let groups = footprint(&meshes).into_iter().collect();
     let model = Model {
         source: ModelSource::Meshes { meshes, textures, joint_count: JOINTS },
         parents: vec![None, Some(0), Some(0)],
-        groups: Vec::new(),
+        groups,
     };
     Ok((model, ShipParts { objects }))
+}
+
+/// The ship's body group: the one it casts its contact shadow as.
+pub const SHIP_BODY: GroupId = 0;
+
+/// The ship's contact shadow as a footprint of its body (joint 0's meshes), laid along its length (+z), back to
+/// front, from the body's bounds: a dart's - a soft one under all of it, narrower to the nose, and a darker, wider one
+/// under its tail, where its wings are. In heights of the ship as drawn ([`crate::engine::SHIP_DRAWN_HEIGHT`]). None
+/// when no mesh is the body's. The runtime darkens it as the ship comes down to the surface under it.
+fn footprint(meshes: &[MeshData]) -> Option<BodyGroup> {
+    let positions = meshes.iter().flat_map(|m| m.positions.iter().zip(&m.joints).filter(|(_, j)| j[0] == 0).map(|(p, _)| Vec3::from_array(*p)));
+    let (lo, hi) = positions.fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(p), hi.max(p)));
+    if lo.x > hi.x {
+        return None;
+    }
+    let size = hi - lo;
+    let middle = ((lo + hi) / 2.0).with_y(lo.y);
+    let end = |sign: f32| Point { joint: 0, at: middle + Vec3::Z * (size.z / 2.0 * sign) };
+    let height = crate::engine::SHIP_DRAWN_HEIGHT;
+    let (l, w) = (size.z / height, size.x / height);
+    let ellipses = vec![
+        Ellipse { along: 0.0, half_length: 0.5 * l, half_width: 0.3 * w, dark: 0.4 },
+        Ellipse { along: -0.25 * l, half_length: 0.22 * l, half_width: 0.5 * w, dark: 0.5 },
+        Ellipse { along: 0.3 * l, half_length: 0.2 * l, half_width: 0.12 * w, dark: 0.45 },
+    ];
+    Some(BodyGroup { id: SHIP_BODY, joints: vec![0], cast: Cast::Footprint { back: end(-1.0), front: end(1.0), ellipses } })
 }
 
 #[cfg(test)]

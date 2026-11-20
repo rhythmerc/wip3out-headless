@@ -16,9 +16,10 @@ pub mod model;
 pub mod native;
 pub mod stage;
 
-/// What the runtime knows of this engine before one is made: x1.0 is a ship toy-sized, about 20 cm long
-/// over the room's floor (26 game metres a real one; the ship is some 5.2 game metres long).
-pub const INFO: engine_core::EngineInfo = engine_core::EngineInfo { natural_scale: 26.0 };
+/// What the runtime knows of this engine before one is made: x1.0 is a ship toy-sized, about 46 cm long over the
+/// room's floor (26 / 2.3 game metres a real one - the player's pick on the headset, 2.3 times the first 20 cm; the
+/// ship is some 5.2 game metres long).
+pub const INFO: engine_core::EngineInfo = engine_core::EngineInfo { natural_scale: 26.0 / 2.3 };
 
 /// The game files: the player's disc (its cue sheet and tracks) with the game library built from it, its runtime's
 /// configuration and BIOS beside it.

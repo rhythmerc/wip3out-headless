@@ -24,13 +24,43 @@ pub mod settings {
     pub const SPEED: &str = "speed";
     /// The ship's acceleration, a multiple of its own (1: as the game has it; 0.1..4).
     pub const ACCELERATION: &str = "acceleration";
+    /// The right trigger as an analog throttle: 1 (the default), how far it is pulled caps the ship's top speed; 0,
+    /// all or nothing (as the game's own thrust button). As Mario Kart Wii's engine has it.
+    pub const ANALOG_THROTTLE: &str = "analog_throttle";
 }
+
+/// The right trigger as an analog throttle: past its dead zone the ship thrusts, its top speed capped from a tenth
+/// (barely pulled) to all of it (pulled fully); A, or a trigger past `THROTTLE_FULL`, all of it.
+pub fn throttle(touch: &TouchState) -> f32 {
+    if touch.a || touch.right_trigger >= THROTTLE_FULL {
+        return 1.0;
+    }
+    let pulled = ((touch.right_trigger - THROTTLE_DEAD) / (THROTTLE_FULL - THROTTLE_DEAD)).clamp(0.0, 1.0);
+    THROTTLE_LEAST + (1.0 - THROTTLE_LEAST) * pulled
+}
+
+/// The throttle given this frame, from last frame's and the one wanted: up at once; down no faster than the ship
+/// would coast (the cap eased, so letting off doesn't brake it).
+pub fn ease_throttle(last: f32, wanted: f32) -> f32 {
+    if wanted >= last { wanted } else { wanted.max(last * THROTTLE_COAST) }
+}
+
+/// A game frame's easing down (Mario Kart Wii's 0.98 a 60 Hz frame, at 25 Hz).
+const THROTTLE_COAST: f32 = 0.953;
+/// The trigger's dead zone and where it counts as fully pulled.
+const THROTTLE_DEAD: f32 = 0.05;
+const THROTTLE_FULL: f32 = 0.95;
+/// The least top speed a trigger past its dead zone gives (a multiple of the ship's).
+const THROTTLE_LEAST: f32 = 0.1;
 
 /// The ship's size drawn (game units): about as the game's own collision has it - its nose 512 units ahead of its
 /// centre, its wing tips 256 either side.
 const SHIP_HALF_WIDTH: f32 = 260.0;
 const SHIP_HALF_LENGTH: f32 = 520.0;
 const SHIP_HEIGHT: f32 = 140.0;
+/// How tall the ship is drawn, from the surface under it (game units): its hover and its body ([`Focus`]'s height,
+/// and its shadow's unit).
+pub const SHIP_DRAWN_HEIGHT: f32 = HOVER + SHIP_HEIGHT * 0.5;
 
 /// How long the race may take to load before the engine is made without the ship's own model.
 const RACE_LOADS_WITHIN: Duration = Duration::from_secs(90);
@@ -85,6 +115,11 @@ pub struct Wip3out {
     place: Option<PlacePlayer>,
     /// The ship's top speed and acceleration ([`settings::SPEED`], [`settings::ACCELERATION`]).
     tuning: (f32, f32),
+    /// The right trigger as an analog throttle ([`settings::ANALOG_THROTTLE`]); the throttle it asks for, and the one
+    /// last given (eased down to it: [`ease_throttle`]), the top speed it caps a multiple of the tuning's.
+    analog: bool,
+    throttle_wanted: f32,
+    throttle: f32,
     pad: Pad,
     ship: Option<Ship>,
     model: Option<Model>,
@@ -108,6 +143,9 @@ impl Wip3out {
             stage: None,
             place: None,
             tuning: (1.0, 1.0),
+            analog: true,
+            throttle_wanted: 1.0,
+            throttle: 1.0,
             pad: Pad::default(),
             ship: None,
             model: Some(model.unwrap_or_else(stand_in)),
@@ -140,7 +178,7 @@ impl Wip3out {
 const STICK_DEAD: f32 = 0.35;
 
 /// The Touch controllers as the PlayStation pad, the game's own controls: the right trigger (or A) thrusts (CROSS),
-/// the left stick steers and pitches (the d-pad), the grips are the air brakes (L1, R1), B fires (SQUARE).
+/// the left stick steers and pitches (the d-pad), the grips are the air brakes (L2, R2), B fires (SQUARE).
 ///
 /// A first go, digital: the game takes a DualShock's sticks too (analog), not yet mapped.
 pub fn pad(touch: &TouchState) -> Pad {
@@ -152,10 +190,10 @@ pub fn pad(touch: &TouchState) -> Pad {
         buttons |= button::SQUARE;
     }
     if touch.left_grip > 0.5 {
-        buttons |= button::L1;
+        buttons |= button::L2;
     }
     if touch.right_grip > 0.5 {
-        buttons |= button::R1;
+        buttons |= button::R2;
     }
     let (left, right) = input::axis_pushed(touch.left_stick[0], STICK_DEAD);
     let (down, up) = input::axis_pushed(touch.left_stick[1], STICK_DEAD);
@@ -182,6 +220,15 @@ fn stand_in() -> Model {
     headless_core::model::box_model(lo, hi, [0.15, 0.35, 0.9, 1.0], [0.6, 0.8, 1.0, 1.0])
 }
 
+impl Wip3out {
+    /// The ship's tuning to the game: its top speed the setting's, capped by the throttle.
+    fn give_tuning(&self) {
+        if !self.game.set_ship_tuning(self.tuning.0 * self.throttle, self.tuning.1) {
+            eprintln!("Wip3out: this game library can't tune the ship (built before wo3_set_ship_tuning)");
+        }
+    }
+}
+
 impl EngineCore for Wip3out {
     /// The game's frame: it updates its ships every other PAL vblank.
     fn period(&self) -> Duration {
@@ -197,16 +244,20 @@ impl EngineCore for Wip3out {
                     return;
                 }
                 self.tuning = tuning;
-                if !self.game.set_ship_tuning(tuning.0, tuning.1) {
-                    eprintln!("Wip3out: this game library can't tune the ship (built before wo3_set_ship_tuning)");
-                }
+                self.give_tuning();
             }
+            settings::ANALOG_THROTTLE => self.analog = value > 0.5,
             _ => {}
         }
     }
 
     fn set_input(&mut self, touch: &TouchState, held: PadHeld) {
         self.pad = if held.held { Pad::default() } else { pad(touch) };
+        // (an analog throttle thrusts from its dead zone, the top speed capped by how far it is pulled)
+        if self.analog && !held.held && touch.right_trigger > THROTTLE_DEAD {
+            self.pad.buttons |= button::CROSS;
+        }
+        self.throttle_wanted = if self.analog && !held.held { throttle(touch) } else { 1.0 };
     }
 
     /// The stage as the ground and walls the ship flies over, from the next frame (before the race: as it starts).
@@ -253,6 +304,11 @@ impl EngineCore for Wip3out {
         if let Some(place) = self.place.take() {
             self.place_player(place);
         }
+        let eased = ease_throttle(self.throttle, self.throttle_wanted);
+        if eased != self.throttle {
+            self.throttle = eased;
+            self.give_tuning();
+        }
         if std::mem::take(&mut self.running) {
             self.game.step_wait()?;
         } else {
@@ -274,7 +330,7 @@ impl EngineCore for Wip3out {
             feet: frame.w_axis.truncate() - up * (HOVER / units),
             up,
             forward: frame.z_axis.truncate().normalize_or(Vec3::NEG_Z),
-            height: (HOVER + SHIP_HEIGHT * 0.5) / units,
+            height: SHIP_DRAWN_HEIGHT / units,
         })
     }
 
@@ -308,11 +364,26 @@ mod tests {
     #[test]
     fn the_touch_controllers_fly() {
         let p = pad(&TouchState { right_trigger: 1.0, left_stick: [-1.0, 0.1], right_grip: 1.0, ..Default::default() });
-        assert_eq!(p.buttons, button::CROSS | button::LEFT | button::R1);
+        // (the grips are the air brakes, the game's L2 and R2)
+        assert_eq!(p.buttons, button::CROSS | button::LEFT | button::R2);
         assert_eq!((p.lx, p.ly), (1, 115));
         assert_eq!(pad(&TouchState::default()), Pad::default());
         let p = pad(&TouchState { left_stick: [0.0, 0.9], ..Default::default() });
         assert_eq!(p.buttons, button::UP);
+    }
+
+    /// The analog throttle: nothing in the dead zone, a tenth of the top speed just past it, all of it pulled fully
+    /// (or with A); eased down as the ship coasts, up at once.
+    #[test]
+    fn the_trigger_is_an_analog_throttle() {
+        let at = |t: f32| throttle(&TouchState { right_trigger: t, ..Default::default() });
+        assert!((at(THROTTLE_DEAD) - THROTTLE_LEAST).abs() < 1e-6);
+        assert!(at(0.5) > 0.4 && at(0.5) < 0.6, "{}", at(0.5));
+        assert_eq!(at(1.0), 1.0);
+        assert_eq!(throttle(&TouchState { a: true, ..Default::default() }), 1.0);
+        assert_eq!(ease_throttle(0.2, 1.0), 1.0);
+        let down = ease_throttle(1.0, 0.1);
+        assert!(down < 1.0 && down > 0.9, "{down}");
     }
 
     #[test]
