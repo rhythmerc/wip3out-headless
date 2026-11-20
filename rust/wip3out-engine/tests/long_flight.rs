@@ -1,7 +1,8 @@
 //! Free play runs on: the player's game library (`WO3_ENGINE_LIB`) and their disc's cue sheet (`WO3_DISC`; skipped
 //! without them). Ten minutes of the game's time (15 000 frames) flying round a walled room, thrust held, turning left
-//! now and then: the race never ends (its checkpoint clock held full), it is the race's only ship, the game's other
-//! ship slots never move, and the ship stays on the floor inside the walls.
+//! now and then: the race never ends (its checkpoint clock held full), the ship flies on every minute (never
+//! destroyed by the walls), it is the race's only ship, the game's other ship slots never move, and it stays on the
+//! floor inside the walls.
 use headless_core::library::test_paths;
 use wip3out_engine::native::{FLYING, Game, Pad, button};
 use wip3out_engine::stage::{DEFAULT_SCALE, UNITS};
@@ -112,11 +113,11 @@ fn ten_minutes_of_free_play() {
         furthest / (DEFAULT_SCALE * UNITS),
         h / (DEFAULT_SCALE * UNITS)
     );
-    // (not asserted: crashed hard into a wall, the ship can end on its side against it, stalled - its thrust cut, the
-    // game's crashed flag 0x8000 in +0xEC set - where on a circuit the game's rescue would lift it out; the README says
-    // so. Here it is said how far it flew in its slowest minute)
+    // (the walls' hard hits wear a ship's energy down, and at its last the game destroys it: the library holds the
+    // local ship's full, so it flies on)
     let slowest = slowest_minute / (DEFAULT_SCALE * UNITS);
     eprintln!("the least flown in a minute: {slowest:.1} m (real)");
+    assert!(slowest > 2.0, "it flies on, every minute: {slowest} m");
     assert!(lowest_clock > 4000, "the race's clock never runs down: {lowest_clock}");
     assert_eq!(moved_slots, 0, "the game's other ship slots never move");
     assert!(furthest <= h * 1.02, "inside the walls: {furthest} of {h}");

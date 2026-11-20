@@ -31,7 +31,8 @@ it). The branch adds:
     a game frame at a time (25 Hz: the game updates its ships every other PAL vblank) with the host's pad; read the
     local ship, its models and the video memory;
   - into a race quickly (`wo3_race.cpp`): the boot screens skipped (the logos, the title and its attract movie), the
-    menus passed with the pad as each screen takes it, the race's ship count made one, its checkpoint clock held full.
+    menus passed with the pad as each screen takes it, the race's ship count made one, its checkpoint clock and the
+    local ship's energy (which wall hits wear down, to its destruction) held full.
     The race starts some 8 s after boot, against 23 s with the menus driven by frame counts;
   - the room collision (`wo3_room.cpp`, below);
   - no picture: the game's drawing is off (the host draws the ship from its model), textures still loaded.
@@ -81,7 +82,7 @@ Without the two variables the game's tests skip themselves. With them:
 - `free_flight`: a 6 m walled floor in both windings; the ship hovers within 3 cm and stays inside the walls, and
   steps go on past where the race would end;
 - `long_flight`: ten minutes of the game's time round an 8 m room - no game over, one ship, the other slots still,
-  on the floor inside the walls (and how far it flew in its slowest minute, below);
+  flying on every minute (never destroyed by the walls: the library holds its energy), on the floor inside the walls;
 - `ship_tuning`: speed and acceleration;
 - `ship_model`: the game's own model, textured; `WO3_MODEL_PNG=path` draws it in four views (a picture of the
   player's game: never kept in a repo).
@@ -131,11 +132,6 @@ The game's own hover, gravity and wall response then run on the room.
 
 ## Not yet
 
-- **A hard crash into a wall stalls the ship:** it can end on its side against the wall (rolled about 55 degrees),
-  its thrust cut, the game's crashed flag (0x8000 in +0xEC) set. On a circuit the game's rescue lifts it out; here,
-  with the section rebuilt under it, nothing does. In `long_flight` this happens about three minutes in, and it sits
-  there for the rest (the race itself runs on). Setting it upright, clearing the flag and moving it off the wall was
-  tried and isn't enough; the game's crash and recovery logic needs reading.
 - **Corners:** the corridor takes one wall and the one facing it.
 - **The menus are passed, not skipped:** skipping them was tried as far as this: with the front end's own setup kept,
   the menus' code made to return and what they leave set written, the race is entered at vblank 767 but fails setting
