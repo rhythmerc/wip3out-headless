@@ -1,0 +1,14 @@
+# WipEout 3 Special Edition as a buildAR engine, over psxrecomp's static recompilation of the player's own disc. No
+# game data is here: the game's translated code is made on the player's machine from their disc.
+[workspace]
+members = ["rust/wip3out-engine"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[profile.dev]
+opt-level = 3

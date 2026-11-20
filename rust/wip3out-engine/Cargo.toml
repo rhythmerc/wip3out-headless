@@ -1,0 +1,18 @@
+[package]
+name = "wip3out-engine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "WipEout 3 Special Edition's side of the buildAR engine contract: the ship flying free over the room."
+
+[lib]
+name = "wip3out_engine"
+path = "src/lib.rs"
+
+[dependencies]
+# The engine contract (a host pins the same revision).
+engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "1d66ba37ca305a637ba547fb77aa389539bee9c8" }
+# What every headless engine hosts the same way: the game's library loaded and called, the controllers as a pad, the
+# world in the game's units and axes, a stand-in model (a sibling repo of this one).
+buildar-headless-core = { path = "../../../buildar-headless-core" }
