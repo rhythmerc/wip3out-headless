@@ -7,45 +7,8 @@ use engine_core::glam::Vec3;
 use engine_core::{Applied, EngineCore, PadHeld, PlacePlayer, Stage, TouchState};
 use headless_core::library::test_paths;
 
-/// A dumped stage: its scale and the stage.
-fn read_dump(text: &str) -> (f32, Stage) {
-    let mut scale = 0.0;
-    let mut stage = Stage { revision: 1, ..Default::default() };
-    let mut solids: Vec<engine_core::stage::Solid> = Vec::new();
-    for line in text.lines() {
-        let mut words = line.split_whitespace();
-        let kind = words.next().unwrap_or("");
-        let id = if kind == "s" { words.next().and_then(|w| w.parse::<u64>().ok()) } else { None };
-        let n: Vec<f32> = words.filter_map(|w| w.parse().ok()).collect();
-        let p = |i: usize| Vec3::new(n[3 * i], n[3 * i + 1], n[3 * i + 2]);
-        match kind {
-            "scale" => scale = n[0],
-            "q" => stage.room_quads.push([p(0), p(1), p(2), p(3)]),
-            "t" => stage.room_triangles.push([p(0), p(1), p(2)]),
-            "s" => {
-                let id = id.unwrap_or(0);
-                let quad = [p(0), p(1), p(2), p(3)];
-                match solids.iter_mut().find(|s| s.id == id) {
-                    Some(s) => s.quads.push(quad),
-                    None => solids.push(engine_core::stage::Solid { id, quads: vec![quad] }),
-                }
-            }
-            _ => {}
-        }
-    }
-    stage.solids = solids;
-    (scale, stage)
-}
-
-/// The stage shown `k` times bigger.
-fn scaled(stage: &Stage, k: f32, revision: u64) -> Stage {
-    let mut s = stage.clone();
-    s.revision = revision;
-    s.room_quads.iter_mut().flatten().for_each(|p| *p *= k);
-    s.room_triangles.iter_mut().flatten().for_each(|p| *p *= k);
-    s.solids.iter_mut().flat_map(|s| s.quads.iter_mut()).flatten().for_each(|p| *p *= k);
-    s
-}
+mod common;
+use common::{read_dump, scaled};
 
 /// Where the player put the ship down on the headset (the app's log; stage coordinates at the dump's scale): on the
 /// floor, on the bed's top, and on a scanned lump on the bed (a pillow, about 1 m (stage) over the bed's top).
