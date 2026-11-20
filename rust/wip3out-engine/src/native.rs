@@ -67,6 +67,8 @@ type Read = unsafe extern "C" fn(u32, *mut u8, u32) -> c_int;
 type SetStage = unsafe extern "C" fn(*const f32, u32);
 type PlaceShip = unsafe extern "C" fn(*const i32, i16);
 type SetShipTuning = unsafe extern "C" fn(f32, f32);
+type ReadVram = unsafe extern "C" fn(u32, u32, u32, u32, *mut u16) -> c_int;
+type ShipModel = unsafe extern "C" fn(*mut u32) -> c_int;
 
 /// The loaded game. One a process: the game keeps its state in the library's globals, and the library stays loaded
 /// when this goes (its threads still run in it).
@@ -80,6 +82,9 @@ pub struct Game {
     place_ship: PlaceShip,
     /// (a library built before it: none - the ship as the game has it)
     set_ship_tuning: Option<SetShipTuning>,
+    /// (likewise: no model of the game's own - a stand-in)
+    read_vram: Option<ReadVram>,
+    ship_model: Option<ShipModel>,
     _library: GameLibrary,
 }
 
@@ -99,6 +104,8 @@ impl Game {
                 set_stage: library.function("wo3_set_stage")?,
                 place_ship: library.function("wo3_place_ship")?,
                 set_ship_tuning: library.optional("wo3_set_ship_tuning"),
+                read_vram: library.optional("wo3_read_vram"),
+                ship_model: library.optional("wo3_ship_model"),
                 _library: library,
             })
         }
@@ -163,5 +170,23 @@ impl Game {
         // SAFETY: two plain values; callable from any thread.
         unsafe { set(speed, acceleration) };
         true
+    }
+
+    /// The PlayStation's video memory (16-bit words, 1024 by 512): the rectangle at (`x`, `y`), `width` by `height`,
+    /// row by row. None when it isn't there (or the library can't).
+    pub fn read_vram(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Vec<u16>> {
+        let read = self.read_vram?;
+        let mut out = vec![0u16; (width * height) as usize];
+        // SAFETY: the API writes width * height words.
+        (unsafe { read(x, y, width, height, out.as_mut_ptr()) } == 0).then_some(out)
+    }
+
+    /// The local ship's models in the race (the game's objects: its body, its left and right air brakes), once the
+    /// race is loaded.
+    pub fn ship_model(&self) -> Option<[u32; 3]> {
+        let get = self.ship_model?;
+        let mut objects = [0u32; 3];
+        // SAFETY: the API writes three words.
+        (unsafe { get(objects.as_mut_ptr()) } == 0).then_some(objects)
     }
 }

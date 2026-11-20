@@ -4,8 +4,8 @@
 //! (the library rebuilds the track section under the ship from them every frame); putting the player down puts the
 //! ship there.
 //!
-//! A first go: the ship is drawn as a box; the game's sound, HUD, weapons and laps are not taken; the race's own
-//! checkpoint clock still runs out (its game over ends the flight).
+//! The game's sound, HUD and laps are not taken yet; weapons are out of scope. The race is a solo race and its
+//! checkpoint clock is held full by the library, so free play runs on.
 use crate::native::{Game, Pad, Ship, button};
 use crate::stage::{self, HOVER, UNITS};
 use engine_core::glam::Vec3;
@@ -32,14 +32,24 @@ const SHIP_HALF_WIDTH: f32 = 260.0;
 const SHIP_HALF_LENGTH: f32 = 520.0;
 const SHIP_HEIGHT: f32 = 140.0;
 
+/// How long the race may take to load before the engine is made without the ship's own model.
+const RACE_LOADS_WITHIN: Duration = Duration::from_secs(90);
+
 /// The game made on the runtime's worker: the library at `library` (built from the player's disc), the disc's cue
-/// sheet at `cue`, its saves under `data`. It boots at once (its menus take some 25 seconds, driven by the library).
+/// sheet at `cue`, its saves under `data`. It boots at once and is made once its race is loaded (some 8 seconds), its
+/// ship drawn with the game's own model ([`crate::model`]).
 pub fn factory(library: PathBuf, cue: PathBuf, data: PathBuf) -> EngineFactory {
     Box::new(move || {
         let game = Game::load(&library)?;
         std::fs::create_dir_all(&data).map_err(|e| format!("{}: {e}", data.display()))?;
         game.boot(&cue, &data)?;
-        Ok(Box::new(Wip3out::new(game)) as Box<dyn EngineCore>)
+        // (the ship's own model is the race's: read once the race is loaded, some 8 seconds on - this is the worker)
+        let start = std::time::Instant::now();
+        while !game.racing() && start.elapsed() < RACE_LOADS_WITHIN {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let model = crate::model::ship(&game).map_err(|e| eprintln!("Wip3out: the ship's model: {e}; a box stands in")).ok();
+        Ok(Box::new(Wip3out::new(game, model)) as Box<dyn EngineCore>)
     })
 }
 
@@ -59,7 +69,7 @@ pub struct Wip3out {
 }
 
 impl Wip3out {
-    fn new(game: Game) -> Self {
+    fn new(game: Game, model: Option<Model>) -> Self {
         Self {
             game,
             stage: None,
@@ -67,7 +77,7 @@ impl Wip3out {
             tuning: (1.0, 1.0),
             pad: Pad::default(),
             ship: None,
-            model: Some(stand_in()),
+            model: Some(model.unwrap_or_else(stand_in)),
             posed: false,
             cut: true,
         }

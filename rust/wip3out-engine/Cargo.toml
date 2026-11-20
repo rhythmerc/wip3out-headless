@@ -16,3 +16,6 @@ engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = 
 # What every headless engine hosts the same way: the game's library loaded and called, the controllers as a pad, the
 # world in the game's units and axes, a stand-in model (a sibling repo of this one).
 buildar-headless-core = { path = "../../../buildar-headless-core" }
+
+[dev-dependencies]
+png = "0.18"

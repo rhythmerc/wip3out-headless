@@ -4,6 +4,7 @@
 //!
 //! - [`native`]: the game library, loaded.
 //! - [`stage`]: the runtime's world in the game's units and axes, and the ship's place in it.
+//! - [`model`]: the local ship's own model and textures, read from the game as it races.
 //! - [`engine`]: the game as the runtime drives it ([`engine_core::EngineCore`]): free flight over the stage.
 //!
 //! The ship flies over the room, not a circuit: the game keeps a ship on its track through track sections (a centre
@@ -11,6 +12,7 @@
 //! from the stage's triangles, so the game's own hover, gravity and wall collision run on the room (the library's
 //! `buildar/wo3_room.cpp`).
 pub mod engine;
+pub mod model;
 pub mod native;
 pub mod stage;
 
