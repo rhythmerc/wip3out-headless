@@ -2,16 +2,25 @@
 //! (`WO3_DISC`; skipped without them). Once the race is loaded the engine's model is the game's body and air brakes,
 //! textured from the game's video memory, not the stand-in box; a picture of it is drawn to `WO3_MODEL_PNG` when that
 //! is set (a file of the player's game: never kept in a repo).
-use engine_core::glam::{Mat3, Vec3};
+use engine_core::glam::{Mat3, Mat4, Vec3};
 use engine_core::{Model, ModelSource};
 use headless_core::library::test_paths;
 
 #[test]
 fn the_ships_own_model() {
     let Some([library, cue]) = test_paths(["WO3_ENGINE_LIB", "WO3_DISC"]) else { return };
-    let data = std::env::temp_dir().join(format!("wo3-model-{}", std::process::id()));
+    // (WO3_TEST_DATA: a data folder kept from run to run, as the app keeps its own - a second boot meets the saves of
+    // the first)
+    let kept = std::env::var_os("WO3_TEST_DATA");
+    let data = kept.clone().map_or_else(|| std::env::temp_dir().join(format!("wo3-model-{}", std::process::id())), std::path::PathBuf::from);
     let mut engine = wip3out_engine::engine::factory(library, cue, data.clone())().expect("the game");
     let models = engine.models();
+    // (a frame, for the air brakes' joints as the game has them)
+    engine.step().expect("a frame");
+    let mut poses = Vec::new();
+    engine.poses(&mut poses);
+    let joints = poses.first().map(|p| p.joints.clone()).unwrap_or_default();
+    assert_eq!(joints.len(), 3, "the body and its two air brakes");
     assert_eq!(models.len(), 1);
     let ModelSource::Meshes { meshes, textures, .. } = &models[0].source else { panic!("meshes") };
     let triangles: usize = meshes.iter().map(|m| m.indices.len() / 3).sum();
@@ -23,14 +32,16 @@ fn the_ships_own_model() {
     assert!(hi.z - lo.z > 600.0 && hi.z - lo.z < 1500.0, "a ship's length along its nose: {}", hi.z - lo.z);
     assert!(hi.z - lo.z > hi.x - lo.x, "longer than it is wide");
     if let Some(path) = std::env::var_os("WO3_MODEL_PNG") {
-        render(&models[0], std::path::Path::new(&path));
+        render(&models[0], &joints, std::path::Path::new(&path));
         eprintln!("drawn to {}", std::path::Path::new(&path).display());
     }
-    let _ = std::fs::remove_dir_all(data);
+    if kept.is_none() {
+        let _ = std::fs::remove_dir_all(data);
+    }
 }
 
 /// A picture of a model: seen from ahead and to its left, a little above, textured, lit from above.
-fn render(model: &Model, path: &std::path::Path) {
+fn render(model: &Model, joints: &[Mat4], path: &std::path::Path) {
     // (four views side by side - three-quarters from ahead and above, from above, from its left, from behind - the
     // viewer on +z of the view, looking down -z)
     let views = [
@@ -40,7 +51,7 @@ fn render(model: &Model, path: &std::path::Path) {
         Mat3::from_rotation_y(std::f32::consts::PI),
     ];
     let (w, h) = (320usize, 240usize);
-    let pictures: Vec<Vec<[u8; 3]>> = views.iter().map(|&v| picture(model, v, w, h)).collect();
+    let pictures: Vec<Vec<[u8; 3]>> = views.iter().map(|&v| picture(model, joints, v, w, h)).collect();
     let mut data = Vec::with_capacity(4 * w * h * 3);
     for y in 0..h {
         for p in &pictures {
@@ -55,9 +66,14 @@ fn render(model: &Model, path: &std::path::Path) {
 }
 
 /// One view of a model, `w` by `h`.
-fn picture(model: &Model, view: Mat3, w: usize, h: usize) -> Vec<[u8; 3]> {
+fn picture(model: &Model, joints: &[Mat4], view: Mat3, w: usize, h: usize) -> Vec<[u8; 3]> {
     let ModelSource::Meshes { meshes, textures, .. } = &model.source else { return vec![[0; 3]; w * h] };
-    let all: Vec<Vec3> = meshes.iter().flat_map(|m| m.positions.iter().map(|&p| view * Vec3::from_array(p))).collect();
+    // (each vertex where its joint puts it)
+    let posed = |m: &engine_core::model::MeshData, i: usize| {
+        let j = joints.get(usize::from(m.joints[i][0])).copied().unwrap_or(Mat4::IDENTITY);
+        j.transform_point3(Vec3::from_array(m.positions[i]))
+    };
+    let all: Vec<Vec3> = meshes.iter().flat_map(|m| (0..m.positions.len()).map(move |i| (m, i))).map(|(m, i)| view * posed(m, i)).collect();
     let (lo, hi) = all.iter().fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), &p| (lo.min(p), hi.max(p)));
     let scale = 0.9 * (w as f32 / (hi.x - lo.x)).min(h as f32 / (hi.y - lo.y));
     let centre = (lo + hi) * 0.5;
@@ -72,7 +88,7 @@ fn picture(model: &Model, view: Mat3, w: usize, h: usize) -> Vec<[u8; 3]> {
         let tex = mesh.material.texture.map(|t| &textures[t as usize]);
         for tri in mesh.indices.chunks(3) {
             let v = [usize::from(tri[0]), usize::from(tri[1]), usize::from(tri[2])];
-            let p = v.map(|i| to_screen(Vec3::from_array(mesh.positions[i])));
+            let p = v.map(|i| to_screen(posed(mesh, i)));
             let n = (view * Vec3::from_array(mesh.normals[v[0]])).normalize_or_zero();
             let shade = 0.45 + 0.55 * n.dot(light).abs();
             let (minx, maxx) = (p.iter().map(|q| q.x).fold(f32::MAX, f32::min).max(0.0) as usize, p.iter().map(|q| q.x).fold(f32::MIN, f32::max).min(w as f32 - 1.0) as usize);

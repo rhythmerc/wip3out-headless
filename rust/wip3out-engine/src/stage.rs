@@ -1,7 +1,7 @@
 //! The runtime's world in the game's space, and the ship in the world. The game's axes are the PlayStation's (x right,
 //! y down, z forward): the world turned half round its x ([`headless_core::space::Y_DOWN`]), so the game's left is the
 //! player's left. The world's unit is the metre as the game sees it (the runtime shows the room bigger or smaller: its
-//! world scale), [`UNITS`] game units each: the ship (about a thousand units long) is some 6.5 m long, an anti-gravity
+//! world scale), [`UNITS`] game units each: the ship (its body 829 units long) is some 5.2 m long, an anti-gravity
 //! racer's size, and the circuits' track some 21 m wide. A toy-sized ship in the room is [`DEFAULT_SCALE`].
 use crate::native::Ship;
 use engine_core::Stage;
@@ -11,7 +11,7 @@ use headless_core::space::{GameSpace, Y_DOWN};
 /// Game units a (game) metre.
 pub const UNITS: f32 = 160.0;
 
-/// The world scale (game metres a real one) that makes the ship a toy about a quarter of a metre long over the room's
+/// The world scale (game metres a real one) that makes the ship a toy about 20 cm long over the room's
 /// floor: the runtime's default for this engine ([`crate::INFO`]), as Mario Kart Wii's is 8.
 pub const DEFAULT_SCALE: f32 = 26.0;
 

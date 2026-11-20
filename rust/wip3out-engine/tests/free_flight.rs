@@ -1,8 +1,8 @@
 //! The ship flying over a room, end to end through the engine contract: the player's game library (`WO3_ENGINE_LIB`)
 //! and their disc's cue sheet (`WO3_DISC`; skipped without them). A 6 m floor walled all round; the ship put down in
 //! the middle facing +x, thrust held, then steered: it hovers over the floor all the while and stays inside the walls,
-//! which come in both windings, as a scanned room's do. Then on past the race's checkpoint clock (its game over): the
-//! steps still come back.
+//! which come in both windings, as a scanned room's do. Then a minute more, every step coming back (the race's
+//! checkpoint clock is held full now; before it was, this flew on past the clock's game over).
 use engine_core::glam::Vec3;
 use engine_core::{Applied, PadHeld, PlacePlayer, Stage, TouchState};
 use headless_core::library::test_paths;
@@ -91,7 +91,7 @@ fn the_ship_flies_over_the_room_and_stays_in_its_walls() {
     // the game, or the library's push-out, puts it back)
     assert!(furthest < half + 0.05, "it stayed in the walls: {furthest} m");
 
-    // (a minute more: the race's clock runs out, and its game over takes the ship away; a step still comes back)
+    // (a minute more: every step comes back in good time)
     for frame in 0..1500 {
         let t = std::time::Instant::now();
         engine.set_input(&thrust, PadHeld::default());

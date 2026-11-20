@@ -13,7 +13,10 @@ disc.
 - `rust/wip3out-engine`: the engine contract (`engine_core::EngineCore`) over the game library:
   - `native.rs` loads the library and calls its C API (`wo3_engine.h`);
   - `stage.rs` maps the runtime's world into the game's units and axes;
-  - `model.rs` reads the local ship's own model and textures from the game as it races;
+  - `model.rs` reads the local ship's own model and textures from the game as it races: its body, and its air
+    brakes as joints posed each frame from the game's own matrices (their attachment to the body). They come from
+    the game's memory and video memory once the race has loaded them, the game itself having decompressed them from
+    the disc's `.PBP` archives (whose compression isn't decoded here);
   - `engine.rs` is the engine.
 - Shared host pieces (loading a game library, input, space, stand-in model) come from
   [`buildar-headless-core`](../buildar-headless-core), a sibling repo. Mario Kart Wii's engine uses the same crate.
@@ -77,7 +80,8 @@ Without the two variables the game's tests skip themselves. With them:
 
 - `free_flight`: a 6 m walled floor in both windings; the ship hovers within 3 cm and stays inside the walls, and
   steps go on past where the race would end;
-- `long_flight`: ten minutes of the game's time round an 8 m room - no game over, one ship, the other slots still;
+- `long_flight`: ten minutes of the game's time round an 8 m room - no game over, one ship, the other slots still,
+  on the floor inside the walls (and how far it flew in its slowest minute, below);
 - `ship_tuning`: speed and acceleration;
 - `ship_model`: the game's own model, textured; `WO3_MODEL_PNG=path` draws it in four views (a picture of the
   player's game: never kept in a repo).
@@ -91,8 +95,8 @@ As Mario Kart Wii's engine has them (`engine::settings`):
   ship's nose each frame while it gains.
 
 Its size in the room is the runtime's world scale, as for every engine. The engine works in game metres, 160 game
-units each: the ship is about 6.5 m long, an anti-gravity racer's size. `stage::DEFAULT_SCALE` (26 game metres to a
-real one) makes it a toy about a quarter of a metre long. The app's `Engine::default_scale` would take that value for
+units each: the ship (its body 829 units long) is about 5.2 m long, an anti-gravity racer's size. `stage::DEFAULT_SCALE` (26 game metres to a
+real one) makes it a toy about 20 cm long. The app's `Engine::default_scale` would take that value for
 this engine, as it takes 8 for Mario Kart Wii; `INFO` declares it (`EngineInfo::natural_scale`).
 
 ## How the ship flies over a room
@@ -127,13 +131,20 @@ The game's own hover, gravity and wall response then run on the room.
 
 ## Not yet
 
-- **Corners:** the corridor takes one wall and the one facing it; in a corner, thrust held, the ship is pinned
-  against two walls at once (pushed out each frame, not trapped through them).
+- **A hard crash into a wall stalls the ship:** it can end on its side against the wall (rolled about 55 degrees),
+  its thrust cut, the game's crashed flag (0x8000 in +0xEC) set. On a circuit the game's rescue lifts it out; here,
+  with the section rebuilt under it, nothing does. In `long_flight` this happens about three minutes in, and it sits
+  there for the rest (the race itself runs on). Setting it upright, clearing the flag and moving it off the wall was
+  tried and isn't enough; the game's crash and recovery logic needs reading.
+- **Corners:** the corridor takes one wall and the one facing it.
+- **The menus are passed, not skipped:** skipping them was tried as far as this: with the front end's own setup kept,
+  the menus' code made to return and what they leave set written, the race is entered at vblank 767 but fails setting
+  up its ships - it reads ship and pilot records the menus build (`wo3_race.cpp`). Going in directly needs those
+  built as the menus build them.
 - **Missing features:** no sound, HUD or laps; weapons are out of scope.
-- **The menus are passed, not skipped:** the menus load what the race uses (`wo3_race.cpp` says what was found), so
-  their code still runs, with the pad.
 - **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
   already rewritten.
 - **Controls:** input is digital (the game also takes a DualShock's sticks). The air brakes on L1/R1 are untested.
-- **Android:** the engine library builds and links for arm64; it hasn't run on a device. With drawing off and
-  headless, it makes no GL calls; its files are in the data folder the host gives.
+- **Android:** the engine library builds and links for arm64 (and the crate for aarch64-linux-android); it hasn't
+  run on a device. Headless with drawing off it makes no GL calls and needs no SDL activity; its files are in the
+  data folder the host gives; the game's thread has a 64 MB stack.

@@ -85,12 +85,19 @@ pub struct Wip3out {
     pad: Pad,
     ship: Option<Ship>,
     model: Option<Model>,
+    /// The ship's own model's parts, to pose (none: the stand-in), and their joints after the last frame.
+    parts: Option<crate::model::ShipParts>,
+    joints: Vec<engine_core::glam::Mat4>,
     posed: bool,
     cut: bool,
 }
 
 impl Wip3out {
-    fn new(game: Game, model: Option<Model>) -> Self {
+    fn new(game: Game, model: Option<(Model, crate::model::ShipParts)>) -> Self {
+        let (model, parts) = match model {
+            Some((m, p)) => (Some(m), Some(p)),
+            None => (None, None),
+        };
         Self {
             game,
             stage: None,
@@ -99,6 +106,8 @@ impl Wip3out {
             pad: Pad::default(),
             ship: None,
             model: Some(model.unwrap_or_else(stand_in)),
+            parts,
+            joints: Vec::new(),
             posed: false,
             cut: true,
         }
@@ -223,6 +232,9 @@ impl EngineCore for Wip3out {
         if let Some(ship) = self.game.ship() {
             self.ship = Some(ship);
             self.posed = true;
+            if let Some(joints) = self.parts.and_then(|p| p.pose(&self.game)) {
+                self.joints = joints;
+            }
         }
         Ok(())
     }
@@ -253,7 +265,11 @@ impl EngineCore for Wip3out {
             model: SHIP,
             discontinuity: std::mem::take(&mut self.cut),
             root: stage::frame(ship, self.units()),
-            joints: vec![engine_core::glam::Mat4::IDENTITY],
+            joints: if self.parts.is_some() && !self.joints.is_empty() {
+                self.joints.clone()
+            } else {
+                vec![engine_core::glam::Mat4::IDENTITY; if self.parts.is_some() { usize::from(crate::model::JOINTS) } else { 1 }]
+            },
             ..Pose::default()
         });
     }

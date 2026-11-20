@@ -1,7 +1,7 @@
 //! Free play runs on: the player's game library (`WO3_ENGINE_LIB`) and their disc's cue sheet (`WO3_DISC`; skipped
-//! without them). Ten minutes of the game's time (15 000 frames) flying round a walled room, thrust held, steered this
-//! way and that: the race never ends (its checkpoint clock held full), the ship is the race's only one, and the
-//! game's other ship slots never move.
+//! without them). Ten minutes of the game's time (15 000 frames) flying round a walled room, thrust held, turning left
+//! now and then: the race never ends (its checkpoint clock held full), it is the race's only ship, the game's other
+//! ship slots never move, and the ship stays on the floor inside the walls.
 use headless_core::library::test_paths;
 use wip3out_engine::native::{FLYING, Game, Pad, button};
 use wip3out_engine::stage::{DEFAULT_SCALE, UNITS};
@@ -66,14 +66,13 @@ fn ten_minutes_of_free_play() {
     let still = slots(&game);
     let (mut lowest_clock, mut flying, mut moved_slots) = (i16::MAX, 0, 0);
     let mut furthest = 0f32;
+    let (mut minute_from, mut slowest_minute) = (None::<[i32; 3]>, f32::MAX);
+    let mut path = 0f32;
+    let mut last: Option<[i32; 3]> = None;
     let flying_start = std::time::Instant::now();
     for frame in 0..15_000u32 {
-        // (steered left for two seconds, right for two, now and then)
-        let steer = match (frame / 50) % 6 {
-            1 => button::LEFT,
-            4 => button::RIGHT,
-            _ => 0,
-        };
+        // (steered left one second in three: round the room, not into a corner and held there)
+        let steer = if (frame / 25) % 3 == 0 { button::LEFT } else { 0 };
         game.step(&Pad { buttons: button::CROSS | steer, ..Pad::default() }).expect("a frame");
         if frame % 25 != 0 {
             continue;
@@ -84,6 +83,17 @@ fn ten_minutes_of_free_play() {
         lowest_clock = lowest_clock.min(clock);
         if ship.flags & FLYING != 0 {
             flying += 1;
+        }
+        if let Some(l) = last {
+            path += ((0..3).map(|k| ((ship.position[k] - l[k]) as f32).powi(2)).sum::<f32>()).sqrt();
+        }
+        last = Some(ship.position);
+        if frame % 1500 == 0 {
+            if minute_from.is_some() {
+                slowest_minute = slowest_minute.min(path);
+            }
+            minute_from = Some(ship.position);
+            path = 0.0;
         }
         let x = ship.position[0] as f32;
         let z = ship.position[2] as f32;
@@ -102,6 +112,11 @@ fn ten_minutes_of_free_play() {
         furthest / (DEFAULT_SCALE * UNITS),
         h / (DEFAULT_SCALE * UNITS)
     );
+    // (not asserted: crashed hard into a wall, the ship can end on its side against it, stalled - its thrust cut, the
+    // game's crashed flag 0x8000 in +0xEC set - where on a circuit the game's rescue would lift it out; the README says
+    // so. Here it is said how far it flew in its slowest minute)
+    let slowest = slowest_minute / (DEFAULT_SCALE * UNITS);
+    eprintln!("the least flown in a minute: {slowest:.1} m (real)");
     assert!(lowest_clock > 4000, "the race's clock never runs down: {lowest_clock}");
     assert_eq!(moved_slots, 0, "the game's other ship slots never move");
     assert!(furthest <= h * 1.02, "inside the walls: {furthest} of {h}");
