@@ -17,15 +17,13 @@ use std::time::Duration;
 /// Its one model, the ship.
 pub const SHIP: engine_core::ModelId = 0;
 
-/// Its settings ([`EngineCore::set_setting`]), as Mario Kart Wii's engine has them.
+/// Its settings ([`EngineCore::set_setting`]), as Mario Kart Wii's engine has them. Its size in the room is the
+/// runtime's world scale, as every engine's is ([`crate::stage::DEFAULT_SCALE`]).
 pub mod settings {
     /// The ship's top speed, a multiple of its own (1: as the game has it; 0.1..4).
     pub const SPEED: &str = "speed";
     /// The ship's acceleration, a multiple of its own (1: as the game has it; 0.1..4).
     pub const ACCELERATION: &str = "acceleration";
-    /// The ship's size against the room, a multiple of its own (1: about a quarter of a metre long; 0.25..4). Its
-    /// speed and hover scale with it: the game's whole world is that much bigger in the room.
-    pub const SCALE: &str = "scale";
 }
 
 /// The ship's size drawn (game units): about as the game's own collision has it - its nose 512 units ahead of its
@@ -51,9 +49,7 @@ pub struct Wip3out {
     /// The last stage given, and a placement to make once the race runs.
     stage: Option<Stage>,
     place: Option<PlacePlayer>,
-    /// The ship's size against the room ([`settings::SCALE`]), and its top speed and acceleration
-    /// ([`settings::SPEED`], [`settings::ACCELERATION`]).
-    scale: f32,
+    /// The ship's top speed and acceleration ([`settings::SPEED`], [`settings::ACCELERATION`]).
     tuning: (f32, f32),
     pad: Pad,
     ship: Option<Ship>,
@@ -68,7 +64,6 @@ impl Wip3out {
             game,
             stage: None,
             place: None,
-            scale: 1.0,
             tuning: (1.0, 1.0),
             pad: Pad::default(),
             ship: None,
@@ -78,24 +73,9 @@ impl Wip3out {
         }
     }
 
-    /// Game units a world metre, at the scale asked.
+    /// Game units a world metre.
     fn units(&self) -> f32 {
-        UNITS / self.scale
-    }
-
-    /// The ship's size changed: the stage laid again at it, and the ship put back where it is, facing the same way.
-    fn rescale(&mut self, scale: f32) {
-        let (feet, forward) = match self.focus() {
-            Some(f) => (Some(f.feet), f.forward),
-            None => (None, Vec3::NEG_Z),
-        };
-        self.scale = scale;
-        if let Some(stage) = self.stage.as_ref() {
-            self.game.set_stage(&stage::triangles(stage, self.units()));
-        }
-        if let Some(feet) = feet.filter(|_| self.game.racing()) {
-            self.place_player(PlacePlayer { point: feet, forward });
-        }
+        UNITS
     }
 }
 
@@ -154,12 +134,6 @@ impl EngineCore for Wip3out {
     fn set_setting(&mut self, key: &str, value: f32) {
         // (the runtime gives its settings every frame: taken when they change)
         match key {
-            settings::SCALE => {
-                let scale = if value.is_finite() { value.clamp(0.25, 4.0) } else { 1.0 };
-                if scale != self.scale {
-                    self.rescale(scale);
-                }
-            }
             settings::SPEED | settings::ACCELERATION => {
                 let tuning = if key == settings::SPEED { (value, self.tuning.1) } else { (self.tuning.0, value) };
                 if tuning == self.tuning {

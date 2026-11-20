@@ -1,10 +1,15 @@
 //! The ship flying over a room, end to end through the engine contract: the player's game library (`WO3_ENGINE_LIB`)
 //! and their disc's cue sheet (`WO3_DISC`; skipped without them). A 6 m floor walled all round; the ship put down in
-//! the middle facing +x, thrust held, then steered: it hovers over the floor all the while, never off it (the game's
-//! flying flag never set), and stays inside the walls.
+//! the middle facing +x, thrust held, then steered: it hovers over the floor all the while and stays inside the walls,
+//! which come in both windings, as a scanned room's do. Then on past the race's checkpoint clock (its game over): the
+//! steps still come back.
 use engine_core::glam::Vec3;
 use engine_core::{Applied, PadHeld, PlacePlayer, Stage, TouchState};
 use headless_core::library::test_paths;
+use wip3out_engine::stage::DEFAULT_SCALE;
+
+/// The runtime's world is in game metres: a real metre is [`DEFAULT_SCALE`] of them (the ship toy-sized).
+const S: f32 = DEFAULT_SCALE;
 
 /// A wall from `a` to `b` on the floor, `height` tall, its front (corners counter-clockwise) to `inside`.
 fn wall(a: Vec3, b: Vec3, height: f32, inside: Vec3) -> [Vec3; 4] {
@@ -15,13 +20,17 @@ fn wall(a: Vec3, b: Vec3, height: f32, inside: Vec3) -> [Vec3; 4] {
 }
 
 fn room(half: f32) -> Stage {
-    let c = |x: f32, z: f32| Vec3::new(x * half, 0.0, z * half);
+    let c = |x: f32, z: f32| Vec3::new(x * half * S, 0.0, z * half * S);
     let corners = [c(-1.0, -1.0), c(1.0, -1.0), c(1.0, 1.0), c(-1.0, 1.0)];
     let mut quads = vec![[corners[0], corners[3], corners[2], corners[1]]];
+    let mut triangles = Vec::new();
     for i in 0..4 {
-        quads.push(wall(corners[i], corners[(i + 1) % 4], 0.3, Vec3::ZERO));
+        let w = wall(corners[i], corners[(i + 1) % 4], 0.3 * S, Vec3::ZERO);
+        quads.push(w);
+        // (and each wall again the other way round, as a scanned room's mesh comes: both windings)
+        triangles.extend([[w[0], w[2], w[1]], [w[0], w[3], w[2]]]);
     }
-    Stage { revision: 1, room_quads: quads, ..Default::default() }
+    Stage { revision: 1, room_quads: quads, room_triangles: triangles, ..Default::default() }
 }
 
 #[test]
@@ -40,6 +49,15 @@ fn the_ship_flies_over_the_room_and_stays_in_its_walls() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     engine.place_player(PlacePlayer { point: Vec3::ZERO, forward: Vec3::X });
+    // (put down once the pad flies the ship: after the race's opening frames)
+    let mut settled = 0;
+    while engine.focus().is_none_or(|f| f.feet.length() > 0.05 * S || f.forward.dot(Vec3::X) < 0.95) {
+        settled += 1;
+        assert!(settled < 250, "never put down where asked: {:?}", engine.focus().map(|f| f.feet / S));
+        engine.set_input(&TouchState::default(), PadHeld::default());
+        engine.step().expect("a frame");
+    }
+    eprintln!("put down after {settled} frames");
 
     let thrust = TouchState { right_trigger: 1.0, ..Default::default() };
     let steer = TouchState { right_trigger: 1.0, left_stick: [-1.0, 0.0], ..Default::default() };
@@ -49,11 +67,8 @@ fn the_ship_flies_over_the_room_and_stays_in_its_walls() {
         engine.set_input(if frame < 150 { &thrust } else { &steer }, PadHeld::default());
         engine.step().expect("a frame");
         let focus = engine.focus().expect("the ship");
-        let feet = focus.feet;
-        if frame == 1 {
-            assert!(feet.length() < 0.05, "put down where asked: {feet}");
-            assert!(focus.forward.dot(Vec3::X) > 0.95, "facing +x: {}", focus.forward);
-        }
+        // (in real metres)
+        let feet = focus.feet / S;
         if frame >= 10 {
             lowest = lowest.min(feet.y);
             highest = highest.max(feet.y);
@@ -75,5 +90,13 @@ fn the_ship_flies_over_the_room_and_stays_in_its_walls() {
     // (its centre within the walls: hitting one hard, it may slip a few centimetres past its plane for a frame before
     // the game, or the library's push-out, puts it back)
     assert!(furthest < half + 0.05, "it stayed in the walls: {furthest} m");
+
+    // (a minute more: the race's clock runs out, and its game over takes the ship away; a step still comes back)
+    for frame in 0..1500 {
+        let t = std::time::Instant::now();
+        engine.set_input(&thrust, PadHeld::default());
+        engine.step().expect("a frame");
+        assert!(t.elapsed().as_secs() < 2, "frame {frame} took {:?}", t.elapsed());
+    }
     let _ = std::fs::remove_dir_all(data);
 }

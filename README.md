@@ -59,15 +59,18 @@ cargo test --release
 Without the two variables, `tests/free_flight.rs` skips itself. With them, it boots the game, flies the ship over a
 6 m walled floor, and checks the hover and the walls.
 
-## Settings
+## Settings and scale
 
 As Mario Kart Wii's engine has them (`engine::settings`):
 
 - `speed`: the ship's top speed, a multiple of its own (0.1..4). The library scales its thrust maximum.
 - `acceleration`: a multiple of its own (0.1..4). The library scales the speed the game's physics adds along the
   ship's nose each frame while it gains.
-- `scale`: the ship's size against the room (0.25..4; 1 is about a quarter of a metre long). The game's whole world
-  scales with it in the room: its speed and hover too.
+
+Its size in the room is the runtime's world scale, as for every engine. The engine works in game metres, 160 game
+units each: the ship is about 6.5 m long, an anti-gravity racer's size. `stage::DEFAULT_SCALE` (26 game metres to a
+real one) makes it a toy about a quarter of a metre long. The app's `Engine::default_scale` would take that value for
+this engine, as it takes 8 for Mario Kart Wii.
 
 ## How the ship flies over a room
 
@@ -95,15 +98,21 @@ The game's own hover, gravity and wall response then run on the room.
 - **The corridor is at most 6000 units (1.5 m) across.** Wider sections break the game's fixed-point physics: the
   hover bounces and the walls leak. With no wall near, both sides are open, 3000 units either side of the ship. They
   move with it every frame, so it never reaches them.
-- **Walls are one-sided.** A stage triangle's front (counter-clockwise) faces the room. A ship that gets through one
-  in a frame is put back in front of it, its velocity into the wall reversed.
+- **Walls are one-sided.** A stage triangle's front (counter-clockwise) faces the room. A scanned mesh's walls come in
+  both windings, and the copy whose back faces the ship is passed through. A ship that went through a wall's front in
+  the last frame is put back in front of it, its velocity into the wall reversed.
 
 ## Not yet
 
-- The ship is drawn as a box. The game's model and textures sit in the disc's `.PBP` archives, not read yet.
-- No sound, HUD, weapons or laps.
-- The race's checkpoint clock still runs. Its game over ends the flight after about 50 seconds without checkpoints.
-- The AI ships still race the circuit.
-- Input is digital. The game also takes a DualShock's sticks.
-- Android: the library compiles and links for arm64 (a fiber shim for Bionic's missing `ucontext`). It hasn't run on
-  a device.
+- **Model:** the ship is drawn as a box. The game's model and textures sit in the disc's `.PBP` archives, not read
+  yet.
+- **Missing features:** no sound, HUD, weapons or laps.
+- **Checkpoint clock:** the race's clock still runs. After about 50 seconds without checkpoints its game over takes
+  the ship away. Steps go on (the tests fly past it), but the ship no longer moves.
+- **AI ships:** they still race the circuit, and are routed through the sections rewritten under the player.
+- **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
+  already rewritten.
+- **Controls:** input is digital (the game also takes a DualShock's sticks). The air brakes on L1/R1 are untested.
+- **Android:** the engine library itself (with `wo3_*` and `psx_runtime_main`) compiles and links for arm64, with a
+  fiber shim for Bionic's missing `ucontext`. It hasn't run on a device: its renderer is desktop GL and its paths are
+  desktop paths.

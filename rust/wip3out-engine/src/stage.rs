@@ -1,15 +1,19 @@
 //! The runtime's world in the game's space, and the ship in the world. The game's axes are the PlayStation's (x right,
 //! y down, z forward): the world turned half round its x ([`headless_core::space::Y_DOWN`]), so the game's left is the
-//! player's left. Its scale is the player's: [`UNITS`] game units a metre makes the ship (about a thousand units long)
-//! a toy a quarter of a metre long over the room's floor; the engine's `scale` setting makes it bigger or smaller
-//! (`units` a metre: [`UNITS`] over it).
+//! player's left. The world's unit is the metre as the game sees it (the runtime shows the room bigger or smaller: its
+//! world scale), [`UNITS`] game units each: the ship (about a thousand units long) is some 6.5 m long, an anti-gravity
+//! racer's size, and the circuits' track some 21 m wide. A toy-sized ship in the room is [`DEFAULT_SCALE`].
 use crate::native::Ship;
 use engine_core::Stage;
 use engine_core::glam::{Mat4, Vec3, Vec4};
 use headless_core::space::{GameSpace, Y_DOWN};
 
-/// Game units a metre, at scale 1.
-pub const UNITS: f32 = 4000.0;
+/// Game units a (game) metre.
+pub const UNITS: f32 = 160.0;
+
+/// The world scale (game metres a real one) that makes the ship a toy about a quarter of a metre long over the room's
+/// floor: the runtime's default for this engine, as Mario Kart Wii's is 8.
+pub const DEFAULT_SCALE: f32 = 26.0;
 
 /// How high the ship hovers over the ground, game units (as the game holds it over its own track).
 pub const HOVER: f32 = 240.0;
@@ -76,7 +80,7 @@ mod tests {
     #[test]
     fn the_ship_hovers_over_where_it_is_put() {
         let (p, yaw) = placement(Vec3::new(1.0, 0.0, -0.5), Vec3::X, UNITS);
-        assert_eq!(p, [4000, -240, 2000]);
+        assert_eq!(p, [160, -240, 80]);
         // (facing +x in the world: +x in the game too, (-sin, cos) of -a quarter turn)
         assert_eq!(yaw, -1024);
         let (_, yaw) = placement(Vec3::ZERO, Vec3::NEG_Z, UNITS);
@@ -85,17 +89,17 @@ mod tests {
 
     #[test]
     fn the_ships_frame_in_the_world() {
-        let ship = ship_facing(Vec3::X, [4000, -240, 2000]);
+        let ship = ship_facing(Vec3::X, [160, -240, 80]);
         let m = frame(&ship, UNITS);
         let origin = m.transform_point3(Vec3::ZERO);
-        assert!((origin - Vec3::new(1.0, 0.06, -0.5)).length() < 1e-4, "{origin}");
+        assert!((origin - Vec3::new(1.0, 1.5, -0.5)).length() < 1e-4, "{origin}");
         // (its model's +z along its nose: the world's +x; its +y up)
         assert!((m.transform_vector3(Vec3::Z).normalize() - Vec3::X).length() < 1e-3);
         assert!((m.transform_vector3(Vec3::Y).normalize() - Vec3::Y).length() < 1e-3);
         assert!(m.determinant() > 0.0, "not mirrored");
-        // (twice the scale: half the units a metre, the ship's centre twice as high over the floor, drawn twice as big)
+        // (half the units a metre: everything twice as far, the ship drawn twice as big)
         let m2 = frame(&ship, UNITS / 2.0);
-        assert!((m2.transform_point3(Vec3::ZERO) - Vec3::new(2.0, 0.12, -1.0)).length() < 1e-4);
+        assert!((m2.transform_point3(Vec3::ZERO) - Vec3::new(2.0, 3.0, -1.0)).length() < 1e-4);
         assert!((m2.transform_vector3(Vec3::Z).length() - 2.0 * m.transform_vector3(Vec3::Z).length()).abs() < 1e-6);
     }
 
@@ -104,6 +108,6 @@ mod tests {
         let stage = Stage { revision: 1, room_quads: vec![[Vec3::ZERO, Vec3::Z, Vec3::new(1.0, 0.0, 1.0), Vec3::X]], ..Default::default() };
         let t = triangles(&stage, UNITS);
         assert_eq!(t.len(), 2);
-        assert_eq!(t[0][3..6], [0.0, 0.0, -4000.0]);
+        assert_eq!(t[0][3..6], [0.0, 0.0, -160.0]);
     }
 }
