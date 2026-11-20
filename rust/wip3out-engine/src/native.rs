@@ -70,6 +70,26 @@ type PlaceShip = unsafe extern "C" fn(*const i32, i16);
 type SetShipTuning = unsafe extern "C" fn(f32, f32);
 type ReadVram = unsafe extern "C" fn(u32, u32, u32, u32, *mut u16) -> c_int;
 type ShipModel = unsafe extern "C" fn(*mut u32) -> c_int;
+type SetFlag = unsafe extern "C" fn(c_int);
+type TakeAudio = unsafe extern "C" fn(*mut i16, u32) -> u32;
+
+/// Where the game's sound is taken from (`wo3_audio`): a function of the library, callable from any thread (the
+/// library keeps the mix behind a lock), so it goes to the runtime's sound thread.
+#[derive(Clone, Copy)]
+pub struct AudioTap(TakeAudio);
+
+impl AudioTap {
+    /// Up to `out.len() / 2` frames of the game's mix (44.1 kHz, left and right interleaved): the frames given.
+    pub fn take(&self, out: &mut [i16]) -> usize {
+        // SAFETY: the library writes at most the frames asked for, two samples each.
+        unsafe { (self.0)(out.as_mut_ptr(), (out.len() / 2) as u32) as usize }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(take: TakeAudio) -> Self {
+        Self(take)
+    }
+}
 
 /// The loaded game. One a process: the game keeps its state in the library's globals, and the library stays loaded
 /// when this goes (its threads still run in it).
@@ -89,6 +109,9 @@ pub struct Game {
     /// (likewise: no model of the game's own - a stand-in)
     read_vram: Option<ReadVram>,
     ship_model: Option<ShipModel>,
+    /// (likewise: no sound)
+    set_sound: Option<SetFlag>,
+    take_audio: Option<TakeAudio>,
     _library: GameLibrary,
 }
 
@@ -112,6 +135,8 @@ impl Game {
                 set_ship_tuning: library.optional("wo3_set_ship_tuning"),
                 read_vram: library.optional("wo3_read_vram"),
                 ship_model: library.optional("wo3_ship_model"),
+                set_sound: library.optional("wo3_set_sound"),
+                take_audio: library.optional("wo3_audio"),
                 _library: library,
             })
         }
@@ -221,5 +246,14 @@ impl Game {
         let mut objects = [0u32; 3];
         // SAFETY: the API writes three words.
         (unsafe { get(objects.as_mut_ptr()) } == 0).then_some(objects)
+    }
+
+    /// The game's sound kept for the caller to take (or not), and where to take it from. The library renders it from
+    /// its boot on, taken or not (`WO3_SOUND=0`: not at all). None when the library has no sound (built before it).
+    pub fn sound(&self, on: bool) -> Option<AudioTap> {
+        let (set, take) = (self.set_sound?, self.take_audio?);
+        // SAFETY: a plain value; callable from any thread.
+        unsafe { set(c_int::from(on)) };
+        Some(AudioTap(take))
     }
 }

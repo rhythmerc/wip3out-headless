@@ -17,6 +17,7 @@ disc.
     brakes as joints posed each frame from the game's own matrices (their attachment to the body). They come from
     the game's memory and video memory once the race has loaded them, the game itself having decompressed them from
     the disc's `.PBP` archives (whose compression isn't decoded here);
+  - `sound.rs` hands the game's own sound to the runtime as a stream (below);
   - `engine.rs` is the engine.
 - Shared host pieces (loading a game library, input, space, stand-in model) come from
   [`buildar-headless-core`](../buildar-headless-core), a sibling repo. Mario Kart Wii's engine uses the same crate.
@@ -37,10 +38,14 @@ it). The branch adds:
     local ship's energy (which wall hits wear down, to its destruction) held full.
     The race starts some 6 s after boot, against 23 s with the menus driven by frame counts;
   - the room collision (`wo3_room.cpp`, below);
-  - no picture: the game's drawing is off (the host draws the ship from its model), textures still loaded.
+  - no picture: the game's drawing is off (the host draws the ship from its model), textures still loaded;
+  - the game's sound for the host (`wo3_sound.cpp`: `wo3_set_sound`, `wo3_audio`, `wo3_set_music`), below.
 - psxrecomp:
   - `PSX_BUILDAR_SHARED`: the runtime as a shared library, its `main` renamed (on Android always so);
-  - two weak hooks, `psx_buildar_vblank` (lockstep) and `psx_buildar_pad`;
+  - weak hooks: `psx_buildar_vblank` (lockstep), `psx_buildar_pad`, and `psx_buildar_audio` (each block the SPU
+    renders; with it, no host audio device opens);
+  - the SPU's pace settable (`psx_spu_set_cycles_per_frame`), the CD audio input mutable (`spu_cd_audio_set_muted`),
+    and its mix walking only the voices sounding, making no sample for one at volume 0 (the same output);
   - mod hooks that can take a function's place (`psx_mod_register_function_replace_plugin`);
   - `gpu_set_skip_draw`;
   - Android arm64: an AArch64 fiber switch (Bionic has no `ucontext`), GLES linked, `-fsigned-char`;
@@ -89,6 +94,9 @@ Without the two variables the game's tests skip themselves. With them:
 - `ship_model`: the game's own model, textured; `WO3_MODEL_PNG=path` draws it in four views (a picture of the
   player's game: never kept in a repo);
 - `corner`: flown into a corner of a walled room and out again;
+- `sound`: the ship idles, thrusts across an 8 m room into its wall, turns and goes again, its sound taken through
+  the engine's stream four blocks a frame: heard, not clipped. `WO3_SOUND_WAV=path` writes it (mono, 44.1 kHz) and
+  the ship's speed each frame beside it (`path.csv`) - a recording of the player's game: never kept in a repo;
 - `room_dump` (also `WO3_STAGE_DUMP`: a room as the app dumped it, its `dump_stage` dev flag - the player's scan,
   never kept in a repo): the ship put down where the player put it on the headset (the floor, the bed, a pillow on
   it) at the dump's scale and at 26; left alone it stays put and upright (off the pillow it may slide, onto the
@@ -144,6 +152,30 @@ The game's own hover, gravity and wall response then run on the room.
   under it. Left on, the section stays behind, the game takes the far-off ship for lost, and its rescue drags it
   across the room. Over the floor a rescue, if one starts, is ended as the game ends it.
 
+## Sound
+
+The game's own sound, as it plays it: the PlayStation's sound chip (the runtime's SPU) renders the game's mix, and the
+engine hands it to the runtime as a stream (`EngineCore::stream`), mono (left and right summed: the game pans about its
+own camera, not the player), played from the ship. Heard:
+
+- the ship's engine, its pitch rising with its speed (some an octave from idle to top speed), and the wind over it;
+- wall hits, as the game plays them (a hit at speed, and the knocks of a ship held against a wall);
+- the race's start (its countdown), once, as the stream starts.
+
+How:
+
+- **Rendered from the boot on, taken or not.** A voice the game keys while the SPU stands still never sounds (its
+  envelope never rises), and the game, which reads it, takes it for free and gives it to the next effect: the
+  engine's loop, keyed at the race's start, was lost at the first wall hit. `WO3_SOUND=0` renders none (no sound).
+- **At PAL's pace.** The runtime's vblank is NTSC's (60 Hz) for every disc; the game is PAL and is stepped at PAL's
+  25 frames a second, two vblanks each. The SPU makes 882 frames a vblank, as on PAL hardware (640 guest cycles a
+  sample, not 768), so a frame is 1/25 s of sound, not 1/30.
+- **No music.** The music is CD audio off the disc, kept off the SPU's CD input (`WO3_MUSIC=1`: on; at PAL's pace the
+  drive delivers it slower than the SPU takes it, so it would break up).
+- **Handed over:** the library keeps what was rendered (a fifth of a second at most) once the engine's stream asks
+  (`wo3_set_sound`); the stream takes it each hundredth of a second, keeping a frame and a half in hand, since the
+  game makes it a frame at a time as it steps.
+
 ## What it costs
 
 `examples/bench.rs` (`bench <library> <cue> [frames]`, desktop or an Android shell) times the factory to the race,
@@ -162,7 +194,10 @@ do. The library (`buildar/wo3_speed.cpp`, `engine_api.cpp`) cuts those cycles:
   advances the guest onto each next deliverable event instead, delivering its interrupt there.
 - **The race's scene isn't drawn.** About half the frame was the game transforming the track, sky and ships on the
   guest's GTE for a picture nobody sees; the ships' flight doesn't read it (`WO3_DRAW=1` draws it).
-- **No sound is rendered.** No host takes it yet (`WO3_SOUND=1` renders it).
+- **The sound costs 0.3 ms a frame** (2.59 ms a frame with `WO3_SOUND=0`, 2.89 with it, desktop): the SPU at its
+  own rate, walking only the voices sounding, the unheard ones (at volume 0) stepped
+  without making their samples. The runtime's own host audio path (its SDL device and resampler) cost 3.4 ms more, and
+  is off.
 - **The runtime's text capture is off**, and **the BIOS boot reads the disc at 32x** (the game itself at its own
   speed).
 
@@ -177,7 +212,7 @@ desktop). The poses are a frame (40 ms) behind the controllers. `WO3_STEP_WHOLE=
 ## Not yet
 
 - **Corners:** the corridor takes one wall and the one facing it.
-- **Missing features:** no sound, HUD or laps; weapons are out of scope.
+- **Missing features:** no HUD or laps, no music (above); weapons are out of scope.
 - **Restoring the circuit:** `wo3_set_stage` with no triangles stops the rewriting, but doesn't restore the sections
   already rewritten.
 - **Controls:** input is digital (the game also takes a DualShock's sticks). The air brakes on L1/R1 are untested.
